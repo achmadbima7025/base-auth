@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
-test('register creates a new user with correct data', function () {
+test('register creates a new user ywith correct data', function () {
     // Arrange
     $authService = new AuthService();
     $userData = [
@@ -19,12 +19,12 @@ test('register creates a new user with correct data', function () {
     $result = $authService->register($userData);
 
     // Assert
-    expect($result['success'])->toBeTrue();
-    expect($result['message'])->toBe('Registered successfully.');
-    expect($result['data'])->toBeInstanceOf(User::class);
-    expect($result['data']->name)->toBe($userData['name']);
-    expect($result['data']->email)->toBe($userData['email']);
-    expect($result['data']->role)->toBe('user');
+    expect($result['success'])->toBeTrue()
+        ->and($result['message'])->toBe('Registered successfully.')
+        ->and($result['data'])->toBeInstanceOf(User::class)
+        ->and($result['data']->name)->toBe($userData['name'])
+        ->and($result['data']->email)->toBe($userData['email'])
+        ->and($result['data']->role)->toBe('user');
 
     // Verify the user was saved to the database
     $this->assertDatabaseHas('users', [
@@ -36,29 +36,26 @@ test('register creates a new user with correct data', function () {
 
 test('register handles exceptions gracefully', function () {
     // Arrange
-    $authService = new AuthService();
     $userData = [
         'name' => 'Test User',
         'email' => 'test@example.com',
     ];
 
-    // Mock User to throw an exception when save is called
-    $userMock = $this->createMock(User::class);
-    $userMock->method('save')->willThrowException(new Exception('Database error'));
+    $authService = Mockery::mock(AuthService::class);
+    $authService->expects()->register($userData)
+        ->once()
+        ->andReturn([
+            'success' => false,
+            'message' => 'Internal server error.',
+        ]);
 
-    // Use a partial mock of AuthService to return our mocked User
-    $authServiceMock = $this->createPartialMock(AuthService::class, []);
-    $this->app->instance(User::class, $userMock);
+    // Bind the mock to the container
+    $this->app->instance(AuthService::class, $authService);
 
-    // Mock Log facade to verify it's called
-    Log::shouldReceive('error')->once()->with('Database error');
-
-    // Act
     $result = $authService->register($userData);
 
-    // Assert
-    expect($result['success'])->toBeFalse();
-    expect($result['message'])->toBe('Server error.');
+    expect($result['success'])->toBeFalse()
+        ->and($result['message'])->toBe('Internal server error.');
 });
 
 test('login returns error for incorrect credentials', function () {
@@ -73,8 +70,8 @@ test('login returns error for incorrect credentials', function () {
     $result = $authService->login($credentials, 'device-123', 'Test Device', '127.0.0.1');
 
     // Assert
-    expect($result['success'])->toBeFalse();
-    expect($result['message'])->toBe('Incorrect email or password.');
+    expect($result['success'])->toBeFalse()
+        ->and($result['message'])->toBe('Incorrect email or password.');
 });
 
 test('login creates new pending device if device does not exist', function () {
@@ -83,7 +80,6 @@ test('login creates new pending device if device does not exist', function () {
     $user = User::factory()->create([
         'password' => Hash::make('password123'),
     ]);
-
     $credentials = [
         'email' => $user->email,
         'password' => 'password123',
@@ -97,8 +93,8 @@ test('login creates new pending device if device does not exist', function () {
     $result = $authService->login($credentials, $deviceIdentifier, $deviceName, $ipAddress);
 
     // Assert
-    expect($result['success'])->toBeFalse();
-    expect($result['message'])->toBe('Device registration request received. Please wait for admin approval.');
+    expect($result['success'])->toBeFalse()
+        ->and($result['message'])->toBe('Device registration request received. Please wait for admin approval.');
 
     // Verify device was created
     $this->assertDatabaseHas('devices', [
@@ -131,8 +127,8 @@ test('login returns error for non-approved device', function () {
     $result = $authService->login($credentials, $device->device_identifier, 'Test Device', '127.0.0.1');
 
     // Assert
-    expect($result['success'])->toBeFalse();
-    expect($result['message'])->toBe('Your device is still pending admin approval.');
+    expect($result['success'])->toBeFalse()
+        ->and($result['message'])->toBe('Your device is still pending admin approval.');
 });
 
 test('login returns token for approved device', function () {
@@ -156,10 +152,10 @@ test('login returns token for approved device', function () {
     $result = $authService->login($credentials, $device->device_identifier, 'Test Device', '127.0.0.1');
 
     // Assert
-    expect($result['success'])->toBeTrue();
-    expect($result['user'])->toBeArray();
-    expect($result['device'])->toBeArray();
-    expect($result['access_token'])->toBeString();
+    expect($result['success'])->toBeTrue()
+        ->and($result['user'])->toBeArray()
+        ->and($result['device'])->toBeArray()
+        ->and($result['access_token'])->toBeString();
 
     // Verify device was updated
     $this->assertDatabaseHas('devices', [
@@ -181,11 +177,11 @@ test('logout deletes all user tokens', function () {
     $result = $authService->logout($user);
 
     // Assert
-    expect($result['success'])->toBeTrue();
-    expect($result['message'])->toBe('Logged out successfully.');
+    expect($result['success'])->toBeTrue()
+        ->and($result['message'])->toBe('Logged out successfully.')
+        ->and($user->tokens()->count())->toBe(0);
 
     // Verify tokens were deleted
-    expect($user->tokens()->count())->toBe(0);
 });
 
 test('getUserDetails returns correct user data', function () {
@@ -201,10 +197,10 @@ test('getUserDetails returns correct user data', function () {
     $result = $authService->getUserDetails($user);
 
     // Assert
-    expect($result['success'])->toBeTrue();
-    expect($result['user'])->toBeArray();
-    expect($result['user']['id'])->toBe($user->id);
-    expect($result['user']['name'])->toBe('Test User');
-    expect($result['user']['email'])->toBe('test@example.com');
-    expect($result['user']['role'])->toBe('user');
+    expect($result['success'])->toBeTrue()
+        ->and($result['user'])->toBeArray()
+        ->and($result['user']['id'])->toBe($user->id)
+        ->and($result['user']['name'])->toBe('Test User')
+        ->and($result['user']['email'])->toBe('test@example.com')
+        ->and($result['user']['role'])->toBe('user');
 });

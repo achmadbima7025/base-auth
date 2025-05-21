@@ -27,9 +27,10 @@ class DeviceService
                 'name',
                 'device_identifier',
                 'status',
-                'last_login_time',
+                'last_login_at',
                 'admin_notes'
             ])
+            ->orderBy('id')
             ->get();
     }
 

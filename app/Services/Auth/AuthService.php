@@ -4,6 +4,7 @@ namespace App\Services\Auth;
 
 use App\Models\Device;
 use App\Models\User;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 
@@ -24,10 +25,10 @@ class AuthService
                 'data' => $user,
             ];
         } catch (\Exception $e) {
-            Log::error($e->getMessage());
+            Log::error('Registration Error: ' . $e->getMessage());
             return [
                 'success' => false,
-                'message' => 'Server error.',
+                'message' => 'Internal Server error.',
             ];
         }
     }
@@ -35,7 +36,7 @@ class AuthService
     public function login(array $credentials, string $deviceIdentifier, ?string $deviceName, string $ipAddress): array
     {
         $user = User::where('email', $credentials['email'])->first();
-        if (!$user || Hash::check($credentials['password'], $user->password)) {
+        if (!$user || !Hash::check($credentials['password'], $user->password)) {
             return [
                 'success' => false,
                 'message' => 'Incorrect email or password.',

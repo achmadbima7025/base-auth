@@ -21,9 +21,9 @@ test('getDeviceForUserByIdentifier returns correct device', function () {
     $result = $deviceService->getDeviceForUserByIdentifier($user, 'test-device-123');
 
     // Assert
-    expect($result)->toBeInstanceOf(Device::class);
-    expect($result->id)->toBe($device->id);
-    expect($result->device_identifier)->toBe('test-device-123');
+    expect($result)->toBeInstanceOf(Device::class)
+        ->and($result->id)->toBe($device->id)
+        ->and($result->device_identifier)->toBe('test-device-123');
 });
 
 test('getDeviceForUserByIdentifier returns null for non-existent device', function () {
@@ -53,9 +53,10 @@ test('listUserDevices returns collection of user devices', function () {
     $result = $deviceService->listUserDevices($user);
 
     // Assert
-    expect($result)->toBeInstanceOf(Collection::class);
-    expect($result)->toHaveCount(3);
-    expect($result->pluck('id')->toArray())->toEqual($devices->pluck('id')->toArray());
+    expect($result)->toBeInstanceOf(Collection::class)
+        ->and($result)->toHaveCount(3)
+        ->and($result->pluck('id')->toArray())
+        ->toEqual($devices->pluck('id')->toArray());
 });
 
 test('listAllDevicesFiltered returns paginated devices with status filter', function () {
@@ -70,9 +71,9 @@ test('listAllDevicesFiltered returns paginated devices with status filter', func
     $result = $deviceService->listAllDevicesFiltered(Device::STATUS_APPROVED, 10);
 
     // Assert
-    expect($result)->toBeInstanceOf(LengthAwarePaginator::class);
-    expect($result->total())->toBe(3);
-    expect($result->first()->status)->toBe(Device::STATUS_APPROVED);
+    expect($result)->toBeInstanceOf(LengthAwarePaginator::class)
+        ->and($result->total())->toBe(3)
+        ->and($result->first()->status)->toBe(Device::STATUS_APPROVED);
 });
 
 test('getDeviceDetails returns correct device data', function () {
@@ -87,11 +88,11 @@ test('getDeviceDetails returns correct device data', function () {
     $result = $deviceService->getDeviceDetails($device);
 
     // Assert
-    expect($result['success'])->toBeTrue();
-    expect($result['data'])->toBeInstanceOf(Device::class);
-    expect($result['data']->id)->toBe($device->id);
-    expect($result['data']->user)->toBeInstanceOf(User::class);
-    expect($result['data']->user->id)->toBe($user->id);
+    expect($result['success'])->toBeTrue()
+        ->and($result['data'])->toBeInstanceOf(Device::class)
+        ->and($result['data']->id)->toBe($device->id)
+        ->and($result['data']->user)->toBeInstanceOf(User::class)
+        ->and($result['data']->user->id)->toBe($user->id);
 });
 
 test('approveDevice changes device status to approved', function () {
@@ -108,11 +109,11 @@ test('approveDevice changes device status to approved', function () {
     $result = $deviceService->approveDevice($device, $admin, 'Approved for testing');
 
     // Assert
-    expect($result['success'])->toBeTrue();
-    expect($result['message'])->toBe('Device approved successfully.');
-    expect($result['data']->status)->toBe(Device::STATUS_APPROVED);
-    expect($result['data']->approved_by)->toBe($admin->id);
-    expect($result['data']->admin_notes)->toBe('Approved for testing');
+    expect($result['success'])->toBeTrue()
+        ->and($result['message'])->toBe('Device approved successfully.')
+        ->and($result['data']->status)->toBe(Device::STATUS_APPROVED)
+        ->and($result['data']->approved_by)->toBe($admin->id)
+        ->and($result['data']->admin_notes)->toBe('Approved for testing');
 
     // Verify database was updated
     $this->assertDatabaseHas('devices', [
@@ -173,11 +174,11 @@ test('rejectDevice changes device status to rejected', function () {
     $result = $deviceService->rejectDevice($device, $admin, 'Suspicious activity');
 
     // Assert
-    expect($result['success'])->toBeTrue();
-    expect($result['message'])->toBe('Device rejected successfully.');
-    expect($result['data']->status)->toBe(Device::STATUS_REJECTED);
-    expect($result['data']->rejected_by)->toBe($admin->id);
-    expect($result['data']->admin_notes)->toBe('Suspicious activity');
+    expect($result['success'])->toBeTrue()
+        ->and($result['message'])->toBe('Device rejected successfully.')
+        ->and($result['data']->status)->toBe(Device::STATUS_REJECTED)
+        ->and($result['data']->rejected_by)->toBe($admin->id)
+        ->and($result['data']->admin_notes)->toBe('Suspicious activity');
 
     // Verify database was updated
     $this->assertDatabaseHas('devices', [
@@ -206,10 +207,10 @@ test('revokeDevice changes device status to revoked', function () {
     $result = $deviceService->revokeDevice($device, $admin, 'Device reported lost');
 
     // Assert
-    expect($result['success'])->toBeTrue();
-    expect($result['message'])->toBe('Device revoked successfully.');
-    expect($result['data']->status)->toBe(Device::STATUS_REVOKED);
-    expect($result['data']->admin_notes)->toBe('Device reported lost');
+    expect($result['success'])->toBeTrue()
+        ->and($result['message'])->toBe('Device revoked successfully.')
+        ->and($result['data']->status)->toBe(Device::STATUS_REVOKED)
+        ->and($result['data']->admin_notes)->toBe('Device reported lost');
 
     // Verify database was updated
     $this->assertDatabaseHas('devices', [
@@ -240,13 +241,13 @@ test('registerDeviceForUserByAdmin creates approved device', function () {
     );
 
     // Assert
-    expect($result['success'])->toBeTrue();
-    expect($result['message'])->toBe('Device registration successful.');
-    expect($result['data']->device_identifier)->toBe($deviceIdentifier);
-    expect($result['data']->name)->toBe($deviceName);
-    expect($result['data']->status)->toBe(Device::STATUS_APPROVED);
-    expect($result['data']->approved_by)->toBe($admin->id);
-    expect($result['data']->admin_notes)->toBe('Registered for new employee');
+    expect($result['success'])->toBeTrue()
+        ->and($result['message'])->toBe('Device registration successful.')
+        ->and($result['data']->device_identifier)->toBe($deviceIdentifier)
+        ->and($result['data']->name)->toBe($deviceName)
+        ->and($result['data']->status)->toBe(Device::STATUS_APPROVED)
+        ->and($result['data']->approved_by)->toBe($admin->id)
+        ->and($result['data']->admin_notes)->toBe('Registered for new employee');
 
     // Verify database was updated
     $this->assertDatabaseHas('devices', [
@@ -271,9 +272,7 @@ test('updateDeviceLastUsed updates last_used_at timestamp', function () {
 
     // Assert
     $device->refresh();
-    expect($device->last_used_at)->not->toBeNull();
-    expect($device->last_used_at)->toBeInstanceOf(\Carbon\Carbon::class);
-
-    // Verify the timestamp is recent (within the last minute)
-    expect($device->last_used_at->diffInMinutes(now()))->toBeLessThan(1);
+    expect($device->last_used_at)->not->toBeNull()
+        ->and($device->last_used_at)->toBeInstanceOf(\Carbon\Carbon::class)
+        ->and($device->last_used_at->diffInMinutes(now()))->toBeLessThan(1);
 });

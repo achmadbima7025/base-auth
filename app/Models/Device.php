@@ -2,12 +2,15 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Device extends Model
 {
+    use HasFactory;
+
     public const string STATUS_PENDING = 'pending';
     public const string STATUS_APPROVED = 'approved';
     public const string STATUS_REJECTED = 'rejected';
