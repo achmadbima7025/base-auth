@@ -64,4 +64,9 @@ class User extends Authenticatable
     {
         return $this->hasMany(Device::class);
     }
+
+    public function scopeApprovedDevice()
+    {
+        return $this->devices()->where('status', Device::STATUS_APPROVED)->first();
+    }
 }

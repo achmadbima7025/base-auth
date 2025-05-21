@@ -2,15 +2,18 @@
 
 namespace App\Services\Auth;
 
+use App\Http\Dto\JsonResponseDto;
+use App\Http\Resources\DeviceResource;
+use App\Http\Resources\UserResource;
+use App\Libs\HttpStatusCode;
 use App\Models\Device;
 use App\Models\User;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 
 class AuthService
 {
-    public function register(array $data): array
+    public function register(array $data): JsonResponseDto
     {
         $user = new User($data);
         $user->role = 'user';
@@ -19,28 +22,28 @@ class AuthService
         try {
             $user->save();
 
-            return [
-                'success' => true,
-                'message' => 'Registered successfully.',
-                'data' => $user,
-            ];
+            return JsonResponseDto::success(
+                data: new UserResource($user),
+                message: 'Registered successfully.',
+                status: HttpStatusCode::CREATED,
+            );
         } catch (\Exception $e) {
             Log::error('Registration Error: ' . $e->getMessage());
-            return [
-                'success' => false,
-                'message' => 'Internal Server error.',
-            ];
+            return JsonResponseDto::error(
+                message: 'Internal server error.',
+                status: HttpStatusCode::INTERNAL_SERVER_ERROR,
+            );
         }
     }
 
-    public function login(array $credentials, string $deviceIdentifier, ?string $deviceName, string $ipAddress): array
+    public function login(array $credentials, string $deviceIdentifier, ?string $deviceName = null, string $ipAddress): JsonResponseDto
     {
         $user = User::where('email', $credentials['email'])->first();
         if (!$user || !Hash::check($credentials['password'], $user->password)) {
-            return [
-                'success' => false,
-                'message' => 'Incorrect email or password.',
-            ];
+            return JsonResponseDto::error(
+                message: 'Email or password given is incorrect.',
+                status: HttpStatusCode::UNAUTHORIZED,
+            );
         }
 
         $device = $user->devices()->firstOrNew(
@@ -55,19 +58,20 @@ class AuthService
         if (!$device->exists) {
             $device->save();
 
-            return [
-                'success' => false,
-                'message' => 'Device registration request received. Please wait for admin approval.',
-            ];
+            return JsonResponseDto::success(
+                data: new UserResource($user->load('devices')),
+                message: 'Device registration request received. Please wait for admin approval.',
+                status: HttpStatusCode::CREATED,
+            );
         }
 
         if (!$device->isApproved()) {
             $message = $this->getDeviceStatusMessage($device);
 
-            return [
-                'success' => false,
-                'message' => $message,
-            ];
+            return JsonResponseDto::error(
+                message: $message,
+                status: HttpStatusCode::FORBIDDEN,
+            );
         }
 
         $device->last_login_ip = $ipAddress;
@@ -79,12 +83,29 @@ class AuthService
 
         $token = $user->createToken($tokenName)->plainTextToken;
 
-        return [
-            'success' => true,
-            'user' => $user->only(['id', 'name', 'email', 'role']),
-            'device' => $device->only(['id', 'device_identifier', 'name', 'status']),
-            'access_token' => $token,
-        ];
+        return JsonResponseDto::success(
+            data: [
+                'user' => new UserResource($user),
+                'device' => new DeviceResource($device),
+                'access_token' => $token
+            ],
+            message: 'Logged in successfully.',
+        );
+    }
+
+    public function logout(User $user): JsonResponseDto
+    {
+        $user->tokens()->delete();
+
+        return JsonResponseDto::success(message: 'Logged out successfully.');
+    }
+
+    public function getUserDetails(User $user): JsonResponseDto
+    {
+        return JsonResponseDto::success(
+            data: new UserResource($user->load('devices')),
+            message: 'User details retrieved successfully.',
+        );
     }
 
     private function getDeviceStatusMessage(Device $device): string
@@ -107,23 +128,5 @@ class AuthService
             default:
                 return 'Device access denied.';
         }
-    }
-
-    public function logout(User $user): array
-    {
-        $user->tokens()->delete();
-
-        return [
-            'success' => true,
-            'message' => 'Logged out successfully.',
-        ];
-    }
-
-    public function getUserDetails(User $user): array
-    {
-        return [
-            'success' => true,
-            'user' => $user->only(['id', 'name', 'email', 'role']),
-        ];
     }
 }

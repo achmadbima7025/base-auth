@@ -2,6 +2,8 @@
 
 namespace App\Http\Middleware;
 
+use App\Http\Dto\JsonResponseDto;
+use App\Libs\HttpStatusCode;
 use App\Models\Device;
 use App\Services\Auth\DeviceService;
 use Closure;
@@ -26,13 +28,24 @@ class VerifyRegisteredDeviceMiddleware
             $deviceIdentifier = $request->header('X-Device-ID');
 
             if (!$deviceIdentifier) {
-                return response()->json(['message' => 'Device ID header (X-Device-ID) is missing.)'], 400);
+                return response()->json(
+                    JsonResponseDto::error(
+                        message: 'Device ID header (X-Device-ID) is missing.)',
+                        status: HttpStatusCode::BAD_REQUEST
+                    )->toArray(),
+                    HttpStatusCode::BAD_REQUEST
+                );
             }
 
             $device = $this->deviceService->getDeviceForUserByIdentifier($user, $deviceIdentifier);
 
             if (!$device) {
-                return response()->json(['message' => 'This device is not recognized for your account.'], 400);
+                $responseData = JsonResponseDto::error(
+                    message: 'This device is not recognized for your account.',
+                    status: HttpStatusCode::BAD_REQUEST
+                );
+
+                return response()->json($responseData->toArray(), $responseData->status);
             }
 
             if (!$device->isApproved()) {
@@ -45,7 +58,12 @@ class VerifyRegisteredDeviceMiddleware
                     $message = 'Access for this device has been revoked.';
                 }
 
-                return response()->json(['message' => $message], 403);
+                $responseData = JsonResponseDto::error(
+                    message: $message,
+                    status: HttpStatusCode::FORBIDDEN,
+                );
+
+                return response()->json($responseData->toArray(), $responseData->status);
             }
 
             $this->deviceService->updateDeviceLastUsed($device);

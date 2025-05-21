@@ -2,10 +2,11 @@
 
 namespace App\Services\Auth;
 
+use App\Http\Dto\JsonResponseDto;
+use App\Http\Resources\DeviceResource;
+use App\Libs\HttpStatusCode;
 use App\Models\Device;
 use App\Models\User;
-use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -18,9 +19,9 @@ class DeviceService
             ->first();
     }
 
-    public function listUserDevices(User $user): Collection
+    public function listUserDevices(User $user): JsonResponseDto
     {
-        return $user->devices()
+        $result = $user->devices()
             ->select([
                 'id',
                 'user_id',
@@ -32,27 +33,36 @@ class DeviceService
             ])
             ->orderBy('id')
             ->get();
+
+        return JsonResponseDto::success(
+            data: DeviceResource::collection($result),
+            message: 'User devices retrieved successfully.',
+        );
     }
 
-    public function listAllDevicesFiltered(?string $status, int $perPage = 10): LengthAwarePaginator
+    public function listAllDevicesFiltered(?string $status, int $perPage = 10): JsonResponseDto
     {
-        return Device::with(['user:id,name,email', 'approver:id,name'])
+        $result = Device::with(['user:id,name,email', 'approver:id,name'])
                         ->when(!is_null($status), function ($query) use ($status) {
                             $query->where('status', $status);
                         })
                         ->orderBy('created_at', 'desc')
                         ->paginate($perPage);
+        return JsonResponseDto::success(
+            data: DeviceResource::collection($result),
+            message: 'Devices retrieved successfully.',
+        );
     }
 
-    public function getDeviceDetails(Device $device): array
+    public function getDeviceDetails(Device $device): JsonResponseDto
     {
-        return [
-            'success' => true,
-            'data' => $device->load(['user:id,name,email', 'approver:id,name'])
-        ];
+        return JsonResponseDto::success(
+            data: new DeviceResource($device->load(['user:id,name,email', 'approver:id,name'])),
+            message: 'Device details retrieved successfully.',
+        );
     }
 
-    public function approveDevice(Device $device, User $admin, ?string $notes): array
+    public function approveDevice(Device $device, User $admin, ?string $notes): JsonResponseDto
     {
         DB::beginTransaction();
         try {
@@ -64,10 +74,9 @@ class DeviceService
                 if (!$targetUser) {
                     Log::critical("DeviceManagementService: User relationship is null for UserDevice ID: {$device->id}. Cannot proceed with approval.");
 
-                    return [
-                        'success' => false,
-                        'message' => "Associated user not found for the device being approved (ID: {$device->id})."
-                    ];
+                    return JsonResponseDto::error(
+                        message: "Associated user not found for the device being approved (ID: {$device->id}).",
+                    );
                 }
             }
 
@@ -91,24 +100,22 @@ class DeviceService
             $device->admin_notes = $notes ?? "Device approved by admin {$admin->name}";
 
             $device->save();
-            DB::commit();
 
-            return [
-                'success' => true,
-                'message' => "Device approved successfully.",
-                'data' => $device->fresh(),
-            ];
+            DB::commit();
+            return JsonResponseDto::success(
+                data: new DeviceResource($device->fresh()),
+                message: 'Device approved successfully.',
+            );
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error($e->getMessage());
-            return [
-                'success' => false,
-                'message' => 'Internal server error',
-            ];
+            return JsonResponseDto::error(
+                message: 'Internal server error.',
+            );
         }
     }
 
-    public function rejectDevice(Device $device, User $admin, string $notes): array
+    public function rejectDevice(Device $device, User $admin, string $notes): JsonResponseDto
     {
         try {
             $device->status = Device::STATUS_REJECTED;
@@ -117,21 +124,17 @@ class DeviceService
             $device->admin_notes = $notes;
             $device->save();
 
-            return [
-                'success' => true,
-                'message' => "Device rejected successfully.",
-                'data' => $device->fresh(),
-            ];
+            return JsonResponseDto::success(
+                data: new DeviceResource($device->fresh()),
+                message: 'Device rejected successfully.',
+            );
         } catch (\Exception $e) {
             Log::error($e->getMessage());
-            return [
-                'success' => false,
-                'message' => 'Internal server error',
-            ];
+            return JsonResponseDto::error(message: 'Internal server error.');
         }
     }
 
-    public function revokeDevice(Device $device, User $admin, ?string $notes): array
+    public function revokeDevice(Device $device, User $admin, ?string $notes): JsonResponseDto
     {
         try {
             $device->status = Device::STATUS_REVOKED;
@@ -140,17 +143,13 @@ class DeviceService
 
             $this->revokeTokenForDevice($device);
 
-            return [
-                'success' => true,
-                'message' => 'Device revoked successfully.',
-                'data' => $device->fresh(),
-            ];
+            return JsonResponseDto::success(
+                data: new DeviceResource($device->fresh()),
+                message: 'Device revoked successfully.',
+            );
         } catch (\Exception $e) {
             LOg::error($e->getMessage());
-            return [
-                'success' => false,
-                'message' => 'Internal server error.',
-            ];
+            return JsonResponseDto::error(message: 'Internal server error.');
         }
     }
 
@@ -160,7 +159,7 @@ class DeviceService
         string $deviceName,
         User $admin,
         ?string $notes
-    ): array
+    ): JsonResponseDto
     {
         DB::beginTransaction();
         try {
@@ -191,18 +190,15 @@ class DeviceService
             );
 
             DB::commit();
-            return [
-                'success' => true,
-                'message' => 'Device registration successful.',
-                'data' => $newDevice->fresh(),
-            ];
+            return JsonResponseDto::success(
+                data: new DeviceResource($newDevice->fresh()),
+                message: 'Device registration successful.',
+                status: HTtpStatusCode::CREATED,
+            );
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error($e->getMessage());
-            return [
-                'success' => false,
-                'message' => 'Internal server error.',
-            ];
+            return JsonResponseDto::error(message: 'Internal server error.');
         }
     }
 
