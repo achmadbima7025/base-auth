@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Exceptions\InternalServerErrorException;
 use App\Http\Dto\JsonResponseDto;
 use App\Libs\HttpStatusCode;
 use App\Models\Device;
@@ -19,7 +20,7 @@ class VerifyRegisteredDeviceMiddleware
     /**
      * Handle an incoming request.
      *
-     * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
+     * @param Closure(Request): (Response) $next
      */
     public function handle(Request $request, Closure $next): Response
     {
@@ -30,43 +31,46 @@ class VerifyRegisteredDeviceMiddleware
             if (!$deviceIdentifier) {
                 return response()->json(
                     JsonResponseDto::error(
-                        message: 'Device ID header (X-Device-ID) is missing.)',
-                        status: HttpStatusCode::BAD_REQUEST
+                        message: 'Device ID header (X-Device-ID) is missing.',
                     )->toArray(),
                     HttpStatusCode::BAD_REQUEST
                 );
             }
 
-            $device = $this->deviceService->getDeviceForUserByIdentifier($user, $deviceIdentifier);
+            try {
+                $device = $this->deviceService->getDeviceForUserByIdentifier($user->id, $deviceIdentifier);
 
-            if (!$device) {
-                $responseData = JsonResponseDto::error(
-                    message: 'This device is not recognized for your account.',
-                    status: HttpStatusCode::BAD_REQUEST
-                );
+                if (!$device) {
+                    $responseData = JsonResponseDto::error(
+                        message: 'This device is not recognized for your account.',
+                    );
 
-                return response()->json($responseData->toArray(), $responseData->status);
-            }
-
-            if (!$device->isApproved()) {
-                $message = 'Access from this device is not approved.';
-                if ($device->status === Device::STATUS_PENDING) {
-                    $message = 'This device is pending admin approval.';
-                } elseif ($device->status === Device::STATUS_REJECTED) {
-                    $message = 'Approval for this device has been rejected.';
-                } elseif ($device->status === Device::STATUS_REVOKED) {
-                    $message = 'Access for this device has been revoked.';
+                    return response()->json($responseData->toArray(), $responseData->status);
                 }
 
-                $responseData = JsonResponseDto::error(
-                    message: $message,
-                    status: HttpStatusCode::FORBIDDEN,
-                );
+                if (!$device->isApproved()) {
+                    $message = 'Access from this device is not approved.';
+                    if ($device->status === Device::STATUS_PENDING) {
+                        $message = 'This device is pending admin approval.';
+                    } elseif ($device->status === Device::STATUS_REJECTED) {
+                        $message = 'Approval for this device has been rejected.';
+                    } elseif ($device->status === Device::STATUS_REVOKED) {
+                        $message = 'Access for this device has been revoked.';
+                    }
 
-                return response()->json($responseData->toArray(), $responseData->status);
+                    $responseData = JsonResponseDto::error(
+                        message: $message,
+                        status: HttpStatusCode::FORBIDDEN,
+                    );
+
+                    return response()->json($responseData->toArray(), $responseData->status);
+                }
+
+                $this->deviceService->updateDeviceLastUsed($device);
+            } catch (InternalServerErrorException $e) {
+                return response()->json(JsonResponseDto::error($e->getMessage(), HttpStatusCode::INTERNAL_SERVER_ERROR)->toArray(), HttpStatusCode::INTERNAL_SERVER_ERROR);
             }
 
-            $this->deviceService->updateDeviceLastUsed($device);
         }
 
         return $next($request);

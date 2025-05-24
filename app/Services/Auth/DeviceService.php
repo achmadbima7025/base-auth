@@ -2,68 +2,115 @@
 
 namespace App\Services\Auth;
 
+use App\Exceptions\DeviceNotFoundException;
+use App\Exceptions\InternalServerErrorException;
 use App\Http\Dto\JsonResponseDto;
-use App\Http\Resources\DeviceResource;
-use App\Libs\HttpStatusCode;
 use App\Models\Device;
 use App\Models\User;
+use Exception;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class DeviceService
 {
-    public function getDeviceForUserByIdentifier(User $user, string $deviceIdentifier): ?Device
+    /**
+     * @throws ModelNotFoundException
+     * @throws InternalServerErrorException
+     */
+    public function getDeviceForUserByIdentifier(int $userId, string $deviceIdentifier): ?Device
     {
-        return $user->devices()
-            ->where('device_identifier', $deviceIdentifier)
-            ->first();
+        try {
+            $user = User::find($userId);
+
+            if (!$user) {
+                throw new ModelNotFoundException('User not found.');
+            }
+
+            return $user->devices()
+                ->where('device_identifier', $deviceIdentifier)
+                ->first();
+        } catch (ModelNotFoundException $e) {
+            throw $e;
+        } catch (Exception $e) {
+            Log::error("Error getting device for user: {$e->getMessage()}");
+            throw new InternalServerErrorException('Failed to retrieve device information.');
+        }
     }
 
-    public function listUserDevices(User $user): JsonResponseDto
+    /**
+     * @throws ModelNotFoundException
+     * @throws InternalServerErrorException
+     */
+    public function listUserDevices(int $userId): Collection
     {
-        $result = $user->devices()
-            ->select([
-                'id',
-                'user_id',
-                'name',
-                'device_identifier',
-                'status',
-                'last_login_at',
-                'admin_notes'
-            ])
-            ->orderBy('id')
-            ->get();
+        try {
+            $user = User::find($userId);
 
-        return JsonResponseDto::success(
-            data: DeviceResource::collection($result),
-            message: 'User devices retrieved successfully.',
-        );
+            if (!$user) {
+                throw new ModelNotFoundException('User not found.');
+            }
+
+            return $user->devices()
+                ->select([
+                    'id',
+                    'user_id',
+                    'name',
+                    'device_identifier',
+                    'status',
+                    'last_login_at',
+                    'admin_notes'
+                ])
+                ->orderBy('id')
+                ->get();
+        } catch (ModelNotFoundException $e) {
+            throw $e;
+        } catch (Exception $e) {
+            Log::error("Error listing user devices: {$e->getMessage()}");
+            throw new InternalServerErrorException('Failed to retrieve user devices.');
+        }
     }
 
-    public function listAllDevicesFiltered(?string $status, int $perPage = 10): JsonResponseDto
+    public function listAllDevicesFiltered(?string $status = null, ?int $perPage = 10): LengthAwarePaginator
     {
-        $result = Device::with(['user:id,name,email', 'approver:id,name'])
-                        ->when(!is_null($status), function ($query) use ($status) {
-                            $query->where('status', $status);
-                        })
-                        ->orderBy('created_at', 'desc')
-                        ->paginate($perPage);
-        return JsonResponseDto::success(
-            data: DeviceResource::collection($result),
-            message: 'Devices retrieved successfully.',
-        );
+        return Device::with(['user:id,name,email', 'approver:id,name'])
+            ->when(isset($status), function ($query) use ($status) {
+                $query->where('status', $status);
+            })
+            ->orderBy('created_at', 'desc')
+            ->paginate($perPage);
     }
 
-    public function getDeviceDetails(Device $device): JsonResponseDto
+    /**
+     * @throws DeviceNotFoundException
+     */
+    public function getDeviceDetails($deviceIde): Device
     {
-        return JsonResponseDto::success(
-            data: new DeviceResource($device->load(['user:id,name,email', 'approver:id,name'])),
-            message: 'Device details retrieved successfully.',
-        );
+        $device = Device::find($deviceIde);
+
+        if (!$device) {
+            throw new DeviceNotFoundException();
+        }
+
+        return $device->load(['user:id,name,email', 'approver:id,name']);
     }
 
-    public function approveDevice(Device $device, User $admin, ?string $notes): JsonResponseDto
+    /**
+     * @throws InternalServerErrorException
+     * @throws DeviceNotFoundException
+     * @throws Throwable
+     */
+    public function approveDevice(int $deviceId, User $admin, ?string $notes): Device
     {
+        $device = Device::find($deviceId);
+
+        if (!$device) {
+            throw new DeviceNotFoundException('Device not found.');
+        }
+
         DB::beginTransaction();
         try {
             $targetUser = $device->user;
@@ -73,10 +120,7 @@ class DeviceService
 
                 if (!$targetUser) {
                     Log::critical("DeviceManagementService: User relationship is null for UserDevice ID: {$device->id}. Cannot proceed with approval.");
-
-                    return JsonResponseDto::error(
-                        message: "Associated user not found for the device being approved (ID: {$device->id}).",
-                    );
+                    throw new DeviceNotFoundException('Device does not belong to any user.');
                 }
             }
 
@@ -102,21 +146,28 @@ class DeviceService
             $device->save();
 
             DB::commit();
-            return JsonResponseDto::success(
-                data: new DeviceResource($device->fresh()),
-                message: 'Device approved successfully.',
-            );
-        } catch (\Exception $e) {
+            return $device->fresh();
+        } catch (DeviceNotFoundException $e) {
+            DB::rollBack();
+            throw $e;
+        } catch (Exception $e) {
             DB::rollBack();
             Log::error($e->getMessage());
-            return JsonResponseDto::error(
-                message: 'Internal server error.',
-            );
+            throw new InternalServerErrorException();
         }
     }
 
-    public function rejectDevice(Device $device, User $admin, string $notes): JsonResponseDto
+    /**
+     * @throws InternalServerErrorException
+     * @throws DeviceNotFoundException
+     */
+    public function rejectDevice(int $deviceId, User $admin, string $notes): Device
     {
+        $device = Device::find($deviceId);
+        if (!$device) {
+            throw new DeviceNotFoundException('Device not found.');
+        }
+
         try {
             $device->status = Device::STATUS_REJECTED;
             $device->rejected_by = $admin->id;
@@ -124,18 +175,25 @@ class DeviceService
             $device->admin_notes = $notes;
             $device->save();
 
-            return JsonResponseDto::success(
-                data: new DeviceResource($device->fresh()),
-                message: 'Device rejected successfully.',
-            );
-        } catch (\Exception $e) {
+            return $device->fresh(['user']);
+        } catch (Exception $e) {
             Log::error($e->getMessage());
-            return JsonResponseDto::error(message: 'Internal server error.');
+            throw new InternalServerErrorException();
         }
     }
 
-    public function revokeDevice(Device $device, User $admin, ?string $notes): JsonResponseDto
+    /**
+     * @throws InternalServerErrorException
+     * @throws DeviceNotFoundException
+     */
+    public function revokeDevice(int $deviceId, User $admin, ?string $notes): Device
     {
+        $device = Device::find($deviceId);
+
+        if (!$device) {
+            throw new DeviceNotFoundException('Device not found.');
+        }
+
         try {
             $device->status = Device::STATUS_REVOKED;
             $device->admin_notes = $notes ?: "Device revoked by admin {$admin->name}";
@@ -143,26 +201,32 @@ class DeviceService
 
             $this->revokeTokenForDevice($device);
 
-            return JsonResponseDto::success(
-                data: new DeviceResource($device->fresh()),
-                message: 'Device revoked successfully.',
-            );
-        } catch (\Exception $e) {
-            LOg::error($e->getMessage());
-            return JsonResponseDto::error(message: 'Internal server error.');
+            return $device->fresh(['user']);
+        } catch (Exception $e) {
+            Log::error($e->getMessage());
+            throw new InternalServerErrorException();
         }
     }
 
+    /**
+     * @throws InternalServerErrorException|Throwable
+     */
     public function registerDeviceForUserByAdmin(
-        User $user,
+        int $userId,
         string $deviceIdentifier,
         string $deviceName,
         User $admin,
         ?string $notes
-    ): JsonResponseDto
+    ): Device
     {
         DB::beginTransaction();
         try {
+            $user = User::find($userId);
+
+            if (!$user) {
+                throw new ModelNotFoundException('User not found.');
+            }
+
             $oldApprovedDevice = $user->devices()
                 ->where('status', Device::STATUS_APPROVED)
                 ->where('device_identifier', '!=', $deviceIdentifier)
@@ -190,41 +254,61 @@ class DeviceService
             );
 
             DB::commit();
-            return JsonResponseDto::success(
-                data: new DeviceResource($newDevice->fresh()),
-                message: 'Device registration successful.',
-                status: HTtpStatusCode::CREATED,
-            );
-        } catch (\Exception $e) {
+            return $newDevice->fresh(['user']);
+        } catch (Exception $e) {
             DB::rollBack();
             Log::error($e->getMessage());
-            return JsonResponseDto::error(message: 'Internal server error.');
+            throw new Exception('Failed to register device.');
         }
     }
 
+    /**
+     * @throws InternalServerErrorException
+     */
     public function updateDeviceLastUsed(Device $device): void
     {
-        $device->update([
-            'last_used_at' => now()
-        ]);
+        try {
+            $device->update([
+                'last_used_at' => now()
+            ]);
+        } catch (Exception $e) {
+            Log::error($e->getMessage());
+            throw new InternalServerErrorException('Failed to update device last used timestamp.');
+        }
     }
 
+    /**
+     * @throws InternalServerErrorException
+     */
     private function revokeOldDeviceInternal(Device $device, User $targetUser, User $admin, string $reason): void
     {
-        $device->status = Device::STATUS_REVOKED;
-        $device->admin_notes = ($device->admin_notes ? "{$device->admin_notes}\n" : '')
-            . $reason . ' by ' . $admin->name . now()->toDateTimeString();
+        try {
+            $device->status = Device::STATUS_REVOKED;
+            $device->admin_notes = ($device->admin_notes ? "{$device->admin_notes}\n" : '')
+                . $reason . ' by ' . $admin->name . now()->toDateTimeString();
 
-        $device->save();
-        $this->revokeTokenForDevice($device, $targetUser);
+            $device->save();
+            $this->revokeTokenForDevice($device, $targetUser);
+        } catch (Exception $e) {
+            Log::error("Failed to revoke old device: {$e->getMessage()}");
+            throw new InternalServerErrorException('Failed to revoke old device.');
+        }
     }
 
+    /**
+     * @throws InternalServerErrorException
+     */
     private function revokeTokenForDevice(Device $device, ?User $user = null): void
     {
-        $targetUser = $user ?? $device->user;
-        if ($targetUser) {
-            $tokenName = "auth_token_user_{$targetUser->id}_device_{$device->id}";
-            $targetUser->tokens()->where('name', $tokenName)->delete();
+        try {
+            $targetUser = $user ?? $device->user;
+            if ($targetUser) {
+                $tokenName = "auth_token_user_{$targetUser->id}_device_{$device->id}";
+                $targetUser->tokens()->where('name', $tokenName)->delete();
+            }
+        } catch (Exception $e) {
+            Log::error("Failed to revoke token for device: {$e->getMessage()}");
+            throw new InternalServerErrorException('Failed to revoke authentication token.');
         }
     }
 }

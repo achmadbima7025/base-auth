@@ -1,61 +1,487 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Base Auth API Documentation
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+This document provides comprehensive documentation for the Base Auth API, which includes authentication and device management functionality.
 
-## About Laravel
+## Table of Contents
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+- [Authentication](#authentication)
+  - [Login](#login)
+  - [Logout](#logout)
+  - [Register User](#register-user)
+  - [Get User Details](#get-user-details)
+- [Device Management](#device-management)
+  - [List All Devices](#list-all-devices)
+  - [Get Device Details](#get-device-details)
+  - [List User Devices](#list-user-devices)
+  - [Get Device for User by Identifier](#get-device-for-user-by-identifier)
+  - [Update Device Last Used](#update-device-last-used)
+  - [Register Device for User (Admin)](#register-device-for-user-admin)
+  - [Approve Device (Admin)](#approve-device-admin)
+  - [Reject Device (Admin)](#reject-device-admin)
+  - [Revoke Device (Admin)](#revoke-device-admin)
+- [Response Format](#response-format)
+- [Error Handling](#error-handling)
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Authentication
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+All authentication endpoints are located under the `/api` prefix.
 
-## Learning Laravel
+### Login
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+Authenticates a user and returns an access token.
 
-You may also try the [Laravel Bootcamp](https://bootcamp.laravel.com), where you will be guided through building a modern Laravel application from scratch.
+- **URL**: `/api/login`
+- **Method**: `POST`
+- **Headers**:
+  - `X-Device-ID`: Device identifier (required)
+- **Request Body**:
+  ```json
+  {
+    "email": "user@example.com",
+    "password": "password123",
+    "device_name": "My Device"
+  }
+  ```
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+  **Note:** `device_name` is optional
+- **Success Response**:
+  ```json
+  {
+    "success": true,
+    "message": "User logged in successfully.",
+    "data": {
+      "user": {
+        "id": 1,
+        "name": "John Doe",
+        "email": "user@example.com",
+        "created_at": "2023-01-01T00:00:00.000000Z",
+        "updated_at": "2023-01-01T00:00:00.000000Z"
+      },
+      "device": {
+        "id": 1,
+        "user_id": 1,
+        "identifier": "device-identifier",
+        "name": "My Device",
+        "status": "pending",
+        "created_at": "2023-01-01T00:00:00.000000Z",
+        "updated_at": "2023-01-01T00:00:00.000000Z"
+      },
+      "access_token": "token_string"
+    }
+  }
+  ```
+- **Error Response**:
+  ```json
+  {
+    "success": false,
+    "message": "Invalid credentials",
+    "status": 401
+  }
+  ```
 
-## Laravel Sponsors
+### Logout
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+Logs out the user by invalidating their access token.
 
-### Premium Partners
+- **URL**: `/api/logout`
+- **Method**: `POST`
+- **Headers**:
+  - `Authorization`: `Bearer {token}`
+- **Success Response**:
+  ```json
+  {
+    "success": true,
+    "message": "User logged out successfully."
+  }
+  ```
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+### Register User
 
-## Contributing
+Registers a new user. Requires admin privileges.
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+- **URL**: `/api/register`
+- **Method**: `POST`
+- **Headers**:
+  - `Authorization`: `Bearer {token}`
+- **Request Body**:
+  ```json
+  {
+    "name": "John Doe",
+    "email": "user@example.com",
+    "password": "password123",
+    "password_confirmation": "password123"
+  }
+  ```
+- **Success Response**:
+  ```json
+  {
+    "success": true,
+    "message": "User registered successfully.",
+    "data": {
+      "id": 1,
+      "name": "John Doe",
+      "email": "user@example.com",
+      "created_at": "2023-01-01T00:00:00.000000Z",
+      "updated_at": "2023-01-01T00:00:00.000000Z"
+    },
+    "status": 201
+  }
+  ```
 
-## Code of Conduct
+### Get User Details
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+Retrieves details for the specified user.
 
-## Security Vulnerabilities
+- **URL**: `/api/users/{user}`
+- **Method**: `GET`
+- **Headers**:
+  - `Authorization`: `Bearer {token}`
+- **Success Response**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "id": 1,
+      "name": "John Doe",
+      "email": "user@example.com",
+      "created_at": "2023-01-01T00:00:00.000000Z",
+      "updated_at": "2023-01-01T00:00:00.000000Z"
+    }
+  }
+  ```
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+## Device Management
 
-## License
+All device management endpoints are located under the `/api/devices` prefix and require authentication.
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+### List All Devices
+
+Lists all devices with optional status filtering and pagination.
+
+- **URL**: `/api/devices`
+- **Method**: `GET`
+- **Headers**:
+  - `Authorization`: `Bearer {token}`
+- **Query Parameters**:
+  - `status`: Filter by device status (optional)
+  - `perPage`: Number of items per page (optional)
+- **Success Response**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "data": [
+        {
+          "id": 1,
+          "user_id": 1,
+          "identifier": "device-identifier-1",
+          "name": "Device 1",
+          "status": "approved",
+          "created_at": "2023-01-01T00:00:00.000000Z",
+          "updated_at": "2023-01-01T00:00:00.000000Z"
+        },
+        {
+          "id": 2,
+          "user_id": 2,
+          "identifier": "device-identifier-2",
+          "name": "Device 2",
+          "status": "pending",
+          "created_at": "2023-01-01T00:00:00.000000Z",
+          "updated_at": "2023-01-01T00:00:00.000000Z"
+        }
+      ],
+      "links": {
+        "first": "http://example.com/api/devices?page=1",
+        "last": "http://example.com/api/devices?page=1",
+        "prev": null,
+        "next": null
+      },
+      "meta": {
+        "current_page": 1,
+        "from": 1,
+        "last_page": 1,
+        "path": "http://example.com/api/devices",
+        "per_page": 15,
+        "to": 2,
+        "total": 2
+      }
+    }
+  }
+  ```
+
+### Get Device Details
+
+Retrieves details for a specific device.
+
+- **URL**: `/api/devices/{deviceId}`
+- **Method**: `GET`
+- **Headers**:
+  - `Authorization`: `Bearer {token}`
+- **Success Response**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "id": 1,
+      "user_id": 1,
+      "identifier": "device-identifier",
+      "name": "My Device",
+      "status": "approved",
+      "created_at": "2023-01-01T00:00:00.000000Z",
+      "updated_at": "2023-01-01T00:00:00.000000Z"
+    }
+  }
+  ```
+- **Error Response**:
+  ```json
+  {
+    "success": false,
+    "message": "Device not found.",
+    "status": 404
+  }
+  ```
+
+### List User Devices
+
+Lists all devices belonging to a specific user.
+
+- **URL**: `/api/devices/user/{userId}`
+- **Method**: `GET`
+- **Headers**:
+  - `Authorization`: `Bearer {token}`
+- **Success Response**:
+  ```json
+  {
+    "success": true,
+    "data": [
+      {
+        "id": 1,
+        "user_id": 1,
+        "identifier": "device-identifier-1",
+        "name": "Device 1",
+        "status": "approved",
+        "created_at": "2023-01-01T00:00:00.000000Z",
+        "updated_at": "2023-01-01T00:00:00.000000Z"
+      },
+      {
+        "id": 3,
+        "user_id": 1,
+        "identifier": "device-identifier-3",
+        "name": "Device 3",
+        "status": "pending",
+        "created_at": "2023-01-01T00:00:00.000000Z",
+        "updated_at": "2023-01-01T00:00:00.000000Z"
+      }
+    ]
+  }
+  ```
+
+### Get Device for User by Identifier
+
+Retrieves a specific device for a user by its identifier.
+
+- **URL**: `/api/devices/user/{userId}/identifier/{identifier}`
+- **Method**: `GET`
+- **Headers**:
+  - `Authorization`: `Bearer {token}`
+- **Success Response**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "id": 1,
+      "user_id": 1,
+      "identifier": "device-identifier",
+      "name": "My Device",
+      "status": "approved",
+      "created_at": "2023-01-01T00:00:00.000000Z",
+      "updated_at": "2023-01-01T00:00:00.000000Z"
+    }
+  }
+  ```
+
+### Update Device Last Used
+
+Updates the last used timestamp for a device.
+
+- **URL**: `/api/devices/{deviceId}/update-last-used`
+- **Method**: `PUT`
+- **Headers**:
+  - `Authorization`: `Bearer {token}`
+- **Success Response**:
+  ```json
+  {
+    "success": true,
+    "message": "Device last used timestamp updated successfully."
+  }
+  ```
+
+### Register Device for User (Admin)
+
+Registers a new device for a specific user by an administrator. Requires admin privileges.
+
+- **URL**: `/api/devices/register`
+- **Method**: `POST`
+- **Headers**:
+  - `Authorization`: `Bearer {token}`
+- **Request Body**:
+  ```json
+  {
+    "user_id": 1,
+    "device_identifier": "device-identifier",
+    "device_name": "My Device",
+    "notes": "Registered by admin"
+  }
+  ```
+- **Success Response**:
+  ```json
+  {
+    "success": true,
+    "message": "Device registered successfully.",
+    "data": {
+      "id": 1,
+      "user_id": 1,
+      "identifier": "device-identifier",
+      "name": "My Device",
+      "status": "approved",
+      "created_at": "2023-01-01T00:00:00.000000Z",
+      "updated_at": "2023-01-01T00:00:00.000000Z"
+    }
+  }
+  ```
+
+### Approve Device (Admin)
+
+Approves a device for use, automatically revoking any previously approved device for the same user. Requires admin privileges.
+
+- **URL**: `/api/devices/approve`
+- **Method**: `POST`
+- **Headers**:
+  - `Authorization`: `Bearer {token}`
+- **Request Body**:
+  ```json
+  {
+    "device_id": 1,
+    "notes": "Approved by admin"
+  }
+  ```
+- **Success Response**:
+  ```json
+  {
+    "success": true,
+    "message": "Device approved successfully.",
+    "data": {
+      "id": 1,
+      "user_id": 1,
+      "identifier": "device-identifier",
+      "name": "My Device",
+      "status": "approved",
+      "created_at": "2023-01-01T00:00:00.000000Z",
+      "updated_at": "2023-01-01T00:00:00.000000Z"
+    }
+  }
+  ```
+
+### Reject Device (Admin)
+
+Rejects a device, preventing it from being used. Requires admin privileges.
+
+- **URL**: `/api/devices/reject`
+- **Method**: `POST`
+- **Headers**:
+  - `Authorization`: `Bearer {token}`
+- **Request Body**:
+  ```json
+  {
+    "device_id": 1,
+    "notes": "Rejected by admin"
+  }
+  ```
+- **Success Response**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "id": 1,
+      "user_id": 1,
+      "identifier": "device-identifier",
+      "name": "My Device",
+      "status": "rejected",
+      "created_at": "2023-01-01T00:00:00.000000Z",
+      "updated_at": "2023-01-01T00:00:00.000000Z"
+    }
+  }
+  ```
+
+### Revoke Device (Admin)
+
+Revokes a previously approved device. Requires admin privileges.
+
+- **URL**: `/api/devices/revoke`
+- **Method**: `POST`
+- **Headers**:
+  - `Authorization`: `Bearer {token}`
+- **Request Body**:
+  ```json
+  {
+    "device_id": 1,
+    "notes": "Revoked by admin"
+  }
+  ```
+- **Success Response**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "id": 1,
+      "user_id": 1,
+      "identifier": "device-identifier",
+      "name": "My Device",
+      "status": "revoked",
+      "created_at": "2023-01-01T00:00:00.000000Z",
+      "updated_at": "2023-01-01T00:00:00.000000Z"
+    }
+  }
+  ```
+
+## Response Format
+
+All API responses follow a consistent format:
+
+### Success Response
+
+```json
+{
+  "success": true,
+  "message": "Optional success message",
+  "data": {
+    "example": "response data"
+  },
+  "status": 200
+}
+```
+
+**Note:** The `status` field is optional and defaults to 200
+
+### Error Response
+
+```json
+{
+  "success": false,
+  "message": "Error message",
+  "status": 400
+}
+```
+
+**Note:** The `status` field contains the HTTP status code
+
+## Error Handling
+
+The API uses standard HTTP status codes to indicate the success or failure of a request:
+
+- `200 OK`: The request was successful
+- `201 Created`: A new resource was created successfully
+- `400 Bad Request`: The request was invalid or cannot be served
+- `401 Unauthorized`: Authentication failed or user doesn't have permissions
+- `404 Not Found`: The requested resource does not exist
+- `500 Internal Server Error`: An error occurred on the server

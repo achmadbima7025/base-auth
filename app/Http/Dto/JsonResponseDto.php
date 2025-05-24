@@ -3,6 +3,8 @@
 namespace App\Http\Dto;
 
 use App\Libs\HttpStatusCode;
+use Illuminate\Http\Resources\Json\ResourceCollection;
+use Illuminate\Pagination\AbstractPaginator;
 use Illuminate\Support\Collection;
 
 readonly class JsonResponseDto
@@ -82,7 +84,33 @@ readonly class JsonResponseDto
         }
 
         if ($this->data !== null) {
-            if (is_array($this->data) && !array_is_list($this->data)) {
+            if ($this->data instanceof ResourceCollection && $this->data->resource instanceof AbstractPaginator) {
+
+                $paginator = $this->data->resource;
+                $resourceData = $this->data->toArray(request());
+
+                if (isset($resourceData['data'])) {
+                    $result->put('data', $resourceData['data']);
+                } else {
+                    $result->put('data', $resourceData);
+                }
+
+                $result->put('meta', [
+                    'current_page' => $paginator->currentPage(),
+                    'from' => $paginator->firstItem(),
+                    'last_page' => $paginator->lastPage(),
+                    'path' => $paginator->path(),
+                    'per_page' => $paginator->perPage(),
+                    'to' => $paginator->lastItem(),
+                    'total' => $paginator->total(),
+                ]);
+                $result->put('links', [
+                    'first' => $paginator->url(1),
+                    'last' => $paginator->url($paginator->lastPage()),
+                    'prev' => $paginator->previousPageUrl(),
+                    'next' => $paginator->nextPageUrl(),
+                ]);
+            } elseif (is_array($this->data) && !array_is_list($this->data)) {
                 foreach ($this->data as $key => $value) {
                     $result->put($key, $value);
                 }

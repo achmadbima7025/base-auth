@@ -8,14 +8,8 @@ use Illuminate\Support\Collection;
 
 abstract class Controller
 {
-    /**
-     * Return a JSON response
-     *
-     * @param JsonResponseDto $data
-     * @return JsonResponse
-     */
-    protected function sendJsonResponse(JsonResponseDto $data)
+    protected function sendResponse(JsonResponseDto $response)
     {
-        return response()->json($data->toArray(), $data->status);
+        return response()->json($response->toArray(), $response->status);
     }
 }
