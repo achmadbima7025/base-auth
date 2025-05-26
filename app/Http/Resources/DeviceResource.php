@@ -28,8 +28,12 @@ class DeviceResource extends JsonResource
             'last_login_ip' => $this->last_login_ip,
             'last_login_at' => $this->last_login_at,
             'last_used_at' => $this->last_used_at,
-            'user' => new UserResource($this->whenLoaded('user')),
-            'approver' => new UserResource($this->whenLoaded('approver')),
+            'user' => $this->whenLoaded('user', function () {
+                return new UserResource($this->user);
+            }),
+            'approver' => $this->whenLoaded('approver', function () {
+                return new UserResource($this->approver);
+            }),
         ];
     }
 }

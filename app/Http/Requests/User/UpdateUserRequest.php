@@ -1,17 +1,18 @@
 <?php
 
-namespace App\Http\Requests\Auth;
+namespace App\Http\Requests\User;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
-class RegisterRequest extends FormRequest
+class UpdateUserRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
      */
     public function authorize(): bool
     {
-        return auth()->check() && auth()->user()->isAdmin();
+        return (auth()->check() && auth()->user()->isAdmin()) || auth()->id() === $this->user_id;
     }
 
     /**
@@ -22,9 +23,10 @@ class RegisterRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'user_id' => ['required', 'numeric'],
             'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
-            'role' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users')->ignore($this->user_id)],
+            'role' => ['nullable', 'string',]
         ];
     }
 }

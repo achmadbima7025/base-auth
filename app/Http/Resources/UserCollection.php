@@ -5,7 +5,7 @@ namespace App\Http\Resources;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\ResourceCollection;
 
-class DeviceCollection extends ResourceCollection
+class UserCollection extends ResourceCollection
 {
     /**
      * Transform the resource collection into an array.
@@ -14,10 +14,7 @@ class DeviceCollection extends ResourceCollection
      */
     public function toArray(Request $request): array
     {
-        // Get the data from the collection
         $data = $this->collection->toArray();
-
-        // Ensure we're returning a properly structured array
         return [
             'data' => $data,
             'meta' => [

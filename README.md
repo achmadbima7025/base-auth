@@ -19,6 +19,19 @@ This document provides comprehensive documentation for the Base Auth API, which 
   - [Approve Device (Admin)](#approve-device-admin)
   - [Reject Device (Admin)](#reject-device-admin)
   - [Revoke Device (Admin)](#revoke-device-admin)
+- [Role and Permission Management](#role-and-permission-management)
+  - [List All Roles](#list-all-roles)
+  - [Create Role](#create-role)
+  - [Update Role](#update-role)
+  - [Delete Role](#delete-role)
+  - [Get Role Permissions](#get-role-permissions)
+  - [List All Permissions](#list-all-permissions)
+  - [Create Permission](#create-permission)
+  - [Update Permission](#update-permission)
+  - [Sync Permissions to Role](#sync-permissions-to-role)
+  - [Assign Role to User](#assign-role-to-user)
+  - [Remove Role from User](#remove-role-from-user)
+  - [Revoke Permission from Role](#revoke-permission-from-role)
 - [Response Format](#response-format)
 - [Error Handling](#error-handling)
 
@@ -109,7 +122,8 @@ Registers a new user. Requires admin privileges.
     "name": "John Doe",
     "email": "user@example.com",
     "password": "password123",
-    "password_confirmation": "password123"
+    "password_confirmation": "password123",
+    "role": "user"
   }
   ```
 - **Success Response**:
@@ -441,6 +455,382 @@ Revokes a previously approved device. Requires admin privileges.
       "created_at": "2023-01-01T00:00:00.000000Z",
       "updated_at": "2023-01-01T00:00:00.000000Z"
     }
+  }
+  ```
+
+## Role and Permission Management
+
+All role and permission management endpoints are located under the `/api/role-permission` prefix and require authentication with admin privileges.
+
+### List All Roles
+
+Lists all roles with optional name filtering and pagination.
+
+- **URL**: `/api/role-permission`
+- **Method**: `GET`
+- **Headers**:
+  - `Authorization`: `Bearer {token}`
+- **Query Parameters**:
+  - `name`: Filter by role name (optional)
+  - `perPage`: Number of items per page (optional)
+- **Success Response**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "data": [
+        {
+          "id": 1,
+          "name": "admin",
+          "guard_name": "web",
+          "created_at": "2023-01-01T00:00:00.000000Z",
+          "updated_at": "2023-01-01T00:00:00.000000Z"
+        },
+        {
+          "id": 2,
+          "name": "user",
+          "guard_name": "web",
+          "created_at": "2023-01-01T00:00:00.000000Z",
+          "updated_at": "2023-01-01T00:00:00.000000Z"
+        }
+      ],
+      "links": {
+        "first": "http://example.com/api/role-permission?page=1",
+        "last": "http://example.com/api/role-permission?page=1",
+        "prev": null,
+        "next": null
+      },
+      "meta": {
+        "current_page": 1,
+        "from": 1,
+        "last_page": 1,
+        "path": "http://example.com/api/role-permission",
+        "per_page": 10,
+        "to": 2,
+        "total": 2
+      }
+    }
+  }
+  ```
+
+### Create Role
+
+Creates a new role.
+
+- **URL**: `/api/role-permission`
+- **Method**: `POST`
+- **Headers**:
+  - `Authorization`: `Bearer {token}`
+- **Request Body**:
+  ```json
+  {
+    "name": "editor"
+  }
+  ```
+- **Success Response**:
+  ```json
+  {
+    "success": true,
+    "message": "Role created successfully.",
+    "data": {
+      "id": 3,
+      "name": "editor",
+      "guard_name": "web",
+      "created_at": "2023-01-01T00:00:00.000000Z",
+      "updated_at": "2023-01-01T00:00:00.000000Z"
+    },
+    "status": 201
+  }
+  ```
+
+### Update Role
+
+Updates an existing role.
+
+- **URL**: `/api/role-permission/{roleId}`
+- **Method**: `POST`
+- **Headers**:
+  - `Authorization`: `Bearer {token}`
+- **Request Body**:
+  ```json
+  {
+    "name": "content-editor"
+  }
+  ```
+- **Success Response**:
+  ```json
+  {
+    "success": true,
+    "message": "Role updated successfully.",
+    "data": {
+      "id": 3,
+      "name": "content-editor",
+      "guard_name": "web",
+      "created_at": "2023-01-01T00:00:00.000000Z",
+      "updated_at": "2023-01-01T00:00:00.000000Z"
+    }
+  }
+  ```
+
+### Delete Role
+
+Deletes a role. The role must not be assigned to any users.
+
+- **URL**: `/api/role-permission/{roleId}/delete`
+- **Method**: `POST`
+- **Headers**:
+  - `Authorization`: `Bearer {token}`
+- **Success Response**:
+  ```json
+  {
+    "success": true,
+    "message": "Role deleted successfully."
+  }
+  ```
+- **Error Response**:
+  ```json
+  {
+    "success": false,
+    "message": "Role is assigned to users."
+  }
+  ```
+
+### Get Role Permissions
+
+Retrieves all permissions assigned to a specific role.
+
+- **URL**: `/api/role-permission/{roleId}/details`
+- **Method**: `GET`
+- **Headers**:
+  - `Authorization`: `Bearer {token}`
+- **Success Response**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "id": 1,
+      "name": "admin",
+      "guard_name": "web",
+      "created_at": "2023-01-01T00:00:00.000000Z",
+      "updated_at": "2023-01-01T00:00:00.000000Z",
+      "permissions": [
+        {
+          "id": 1,
+          "name": "create-user",
+          "guard_name": "web",
+          "created_at": "2023-01-01T00:00:00.000000Z",
+          "updated_at": "2023-01-01T00:00:00.000000Z"
+        },
+        {
+          "id": 2,
+          "name": "edit-user",
+          "guard_name": "web",
+          "created_at": "2023-01-01T00:00:00.000000Z",
+          "updated_at": "2023-01-01T00:00:00.000000Z"
+        }
+      ]
+    }
+  }
+  ```
+
+### List All Permissions
+
+Lists all permissions with optional name filtering and pagination.
+
+- **URL**: `/api/role-permission/permissions`
+- **Method**: `GET`
+- **Headers**:
+  - `Authorization`: `Bearer {token}`
+- **Query Parameters**:
+  - `name`: Filter by permission name (optional)
+  - `perPage`: Number of items per page (optional)
+- **Success Response**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "data": [
+        {
+          "id": 1,
+          "name": "create-user",
+          "guard_name": "web",
+          "created_at": "2023-01-01T00:00:00.000000Z",
+          "updated_at": "2023-01-01T00:00:00.000000Z"
+        },
+        {
+          "id": 2,
+          "name": "edit-user",
+          "guard_name": "web",
+          "created_at": "2023-01-01T00:00:00.000000Z",
+          "updated_at": "2023-01-01T00:00:00.000000Z"
+        }
+      ],
+      "links": {
+        "first": "http://example.com/api/role-permission/permissions?page=1",
+        "last": "http://example.com/api/role-permission/permissions?page=1",
+        "prev": null,
+        "next": null
+      },
+      "meta": {
+        "current_page": 1,
+        "from": 1,
+        "last_page": 1,
+        "path": "http://example.com/api/role-permission/permissions",
+        "per_page": 10,
+        "to": 2,
+        "total": 2
+      }
+    }
+  }
+  ```
+
+### Create Permission
+
+Creates a new permission.
+
+- **URL**: `/api/role-permission/permissions`
+- **Method**: `POST`
+- **Headers**:
+  - `Authorization`: `Bearer {token}`
+- **Request Body**:
+  ```json
+  {
+    "name": "delete-user"
+  }
+  ```
+- **Success Response**:
+  ```json
+  {
+    "success": true,
+    "message": "Permission created successfully.",
+    "data": {
+      "id": 3,
+      "name": "delete-user",
+      "guard_name": "web",
+      "created_at": "2023-01-01T00:00:00.000000Z",
+      "updated_at": "2023-01-01T00:00:00.000000Z"
+    }
+  }
+  ```
+
+### Update Permission
+
+Updates an existing permission.
+
+- **URL**: `/api/role-permission/permissions/{permissionId}`
+- **Method**: `POST`
+- **Headers**:
+  - `Authorization`: `Bearer {token}`
+- **Request Body**:
+  ```json
+  {
+    "name": "remove-user"
+  }
+  ```
+- **Success Response**:
+  ```json
+  {
+    "success": true,
+    "message": "Permission updated successfully.",
+    "data": {
+      "id": 3,
+      "name": "remove-user",
+      "guard_name": "web",
+      "created_at": "2023-01-01T00:00:00.000000Z",
+      "updated_at": "2023-01-01T00:00:00.000000Z"
+    }
+  }
+  ```
+
+### Sync Permissions to Role
+
+Syncs a set of permissions to a role, replacing any existing permissions.
+
+- **URL**: `/api/role-permission/role-sync-permissions`
+- **Method**: `POST`
+- **Headers**:
+  - `Authorization`: `Bearer {token}`
+- **Request Body**:
+  ```json
+  {
+    "role_id": 1,
+    "permissions": [1, 2, 3]
+  }
+  ```
+- **Success Response**:
+  ```json
+  {
+    "success": true,
+    "message": "Permissions synced successfully."
+  }
+  ```
+
+### Assign Role to User
+
+Assigns a role to a user.
+
+- **URL**: `/api/role-permission/assign-role-user`
+- **Method**: `POST`
+- **Headers**:
+  - `Authorization`: `Bearer {token}`
+- **Request Body**:
+  ```json
+  {
+    "user_id": 1,
+    "role": "editor"
+  }
+  ```
+- **Success Response**:
+  ```json
+  {
+    "success": true,
+    "message": "Role assigned successfully."
+  }
+  ```
+
+### Remove Role from User
+
+Removes a role from a user.
+
+- **URL**: `/api/role-permission/remove-role-from-user`
+- **Method**: `POST`
+- **Headers**:
+  - `Authorization`: `Bearer {token}`
+- **Request Body**:
+  ```json
+  {
+    "user_id": 1,
+    "role": "editor"
+  }
+  ```
+- **Success Response**:
+  ```json
+  {
+    "success": true,
+    "message": "Role removed user successfully."
+  }
+  ```
+
+### Revoke Permission from Role
+
+Revokes a specific permission from a role.
+
+- **URL**: `/api/role-permission/revoke-role-from-user`
+- **Method**: `POST`
+- **Headers**:
+  - `Authorization`: `Bearer {token}`
+- **Request Body**:
+  ```json
+  {
+    "permission": "create-user",
+    "role": "editor"
+  }
+  ```
+- **Success Response**:
+  ```json
+  {
+    "success": true,
+    "message": "Permission revoked successfully."
   }
   ```
 

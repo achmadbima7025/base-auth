@@ -22,8 +22,19 @@ class RevokeDeviceRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'device_id' => ['required', 'numeric'],
             'notes' => ['required', 'string', 'max:255'],
         ];
+    }
+
+    /**
+     * Get data to be validated from the request.
+     *
+     * @return array
+     */
+    public function validationData()
+    {
+        return array_merge($this->all(), [
+            'device_id' => $this->route('deviceId'),
+        ]);
     }
 }
