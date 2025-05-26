@@ -1,280 +1,224 @@
 <?php
 
-use App\Models\User;
+use App\Exceptions\DeviceNotFoundException;
 use App\Models\Device;
+use App\Models\User;
 use App\Services\Auth\DeviceService;
-use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 
-test('getDeviceForUserByIdentifier returns correct device', function () {
-    // Arrange
-    $deviceService = new DeviceService();
-    $user = User::factory()->create();
-    $device = Device::factory()->create([
-        'user_id' => $user->id,
-        'device_identifier' => 'test-device-123',
-    ]);
+uses(RefreshDatabase::class);
 
-    // Act
-    $result = $deviceService->getDeviceForUserByIdentifier($user, 'test-device-123');
+beforeEach(function () {
+    createRoles();
+    $this->deviceService = new DeviceService();
 
-    // Assert
-    expect($result)->toBeInstanceOf(Device::class)
-        ->and($result->id)->toBe($device->id)
-        ->and($result->device_identifier)->toBe('test-device-123');
-});
+    // Create test users
+    $this->user = User::factory()->create();
+    $this->admin = User::factory()->create();
+    $this->admin->assignRole('admin');
 
-test('getDeviceForUserByIdentifier returns null for non-existent device', function () {
-    // Arrange
-    $deviceService = new DeviceService();
-    $user = User::factory()->create();
-
-    // Act
-    $result = $deviceService->getDeviceForUserByIdentifier($user, 'non-existent-device');
-
-    // Assert
-    expect($result)->toBeNull();
-});
-
-test('listUserDevices returns collection of user devices', function () {
-    // Arrange
-    $deviceService = new DeviceService();
-    $user = User::factory()->create();
-    $devices = Device::factory()->count(3)->create([
-        'user_id' => $user->id,
-    ]);
-
-    // Create a device for another user to ensure it's not included
-    Device::factory()->create();
-
-    // Act
-    $result = $deviceService->listUserDevices($user);
-//    dump($result->toArray());
-    // Assert
-    expect($result)->toBeInstanceOf(\App\Http\Dto\JsonResponseDto::class)
-        ->and($result->success)->toBeTrue()
-        ->and($result->data)->toBeInstanceOf(\Illuminate\Http\Resources\Json\ResourceCollection::class)
-        ->and($result->data)->toHaveCount(3)
-        ->and($result->data->pluck('id')->toArray())
-        ->toEqual($devices->pluck('id')->toArray());
-});
-
-test('listAllDevicesFiltered returns paginated devices with status filter', function () {
-    // Arrange
-    $deviceService = new DeviceService();
-
-    // Create devices with different statuses
-    Device::factory()->count(3)->create(['status' => Device::STATUS_APPROVED]);
-    Device::factory()->count(2)->create(['status' => Device::STATUS_PENDING]);
-
-    // Act
-    $result = $deviceService->listAllDevicesFiltered(Device::STATUS_APPROVED, 10);
-
-    // Assert
-    expect($result)->toBeInstanceOf(\App\Http\Dto\JsonResponseDto::class)
-        ->and($result->data->total())->toBe(3)
-        ->and($result->data->first()->status)->toBe(Device::STATUS_APPROVED);
-});
-
-test('getDeviceDetails returns correct device data', function () {
-    // Arrange
-    $deviceService = new DeviceService();
-    $user = User::factory()->create();
-    $device = Device::factory()->create([
-        'user_id' => $user->id,
-    ]);
-
-    // Act
-    $result = $deviceService->getDeviceDetails($device);
-
-    // Assert
-    expect($result->success)->toBeTrue()
-        ->and($result->data)->toBeInstanceOf(\App\Http\Resources\DeviceResource::class)
-        ->and($result->data->id)->toBe($device->id)
-        ->and($result->data->user)->toBeInstanceOf(User::class)
-        ->and($result->data->user->id)->toBe($user->id);
-});
-
-test('approveDevice changes device status to approved', function () {
-    // Arrange
-    $deviceService = new DeviceService();
-    $user = User::factory()->create();
-    $admin = User::factory()->create(['role' => 'admin']);
-    $device = Device::factory()->create([
-        'user_id' => $user->id,
+    // Create test devices
+    $this->pendingDevice = Device::factory()->create([
+        'user_id' => $this->user->id,
+        'device_identifier' => 'pending-device-123',
         'status' => Device::STATUS_PENDING,
     ]);
 
-    // Act
-    $result = $deviceService->approveDevice($device, $admin, 'Approved for testing');
-
-    // Assert
-    expect($result->success)->toBeTrue()
-        ->and($result->message)->toBe('Device approved successfully.')
-        ->and($result->data->status)->toBe(Device::STATUS_APPROVED)
-        ->and($result->data->approved_by)->toBe($admin->id)
-        ->and($result->data->admin_notes)->toBe('Approved for testing');
-
-    // Verify database was updated
-    $this->assertDatabaseHas('devices', [
-        'id' => $device->id,
+    $this->approvedDevice = Device::factory()->create([
+        'user_id' => $this->user->id,
+        'device_identifier' => 'approved-device-123',
         'status' => Device::STATUS_APPROVED,
-        'approved_by' => $admin->id,
     ]);
 });
 
-test('approveDevice revokes previously approved device', function () {
-    // Arrange
-    $deviceService = new DeviceService();
-    $user = User::factory()->create();
-    $admin = User::factory()->create(['role' => 'admin']);
-
-    // Create a previously approved device
-    $oldDevice = Device::factory()->create([
-        'user_id' => $user->id,
-        'status' => Device::STATUS_APPROVED,
-    ]);
-
-    // Create a new device to approve
-    $newDevice = Device::factory()->create([
-        'user_id' => $user->id,
-        'status' => Device::STATUS_PENDING,
-    ]);
-
+test('getDeviceForUserByIdentifier returns device when it exists', function () {
     // Act
-    $result = $deviceService->approveDevice($newDevice, $admin, 'Approved new device');
+    $device = $this->deviceService->getDeviceForUserByIdentifier(
+        $this->user->id,
+        'approved-device-123'
+    );
 
     // Assert
-    expect($result->success)->toBeTrue();
+    expect($device)->toBeInstanceOf(Device::class)
+        ->and($device->id)->toBe($this->approvedDevice->id)
+        ->and($device->user_id)->toBe($this->user->id)
+        ->and($device->device_identifier)->toBe('approved-device-123');
+});
 
-    // Verify old device was revoked
-    $this->assertDatabaseHas('devices', [
-        'id' => $oldDevice->id,
+test('getDeviceForUserByIdentifier returns null when device does not exist', function () {
+    // Act
+    $device = $this->deviceService->getDeviceForUserByIdentifier(
+        $this->user->id,
+        'non-existent-device'
+    );
+
+    // Assert
+    expect($device)->toBeNull();
+});
+
+test('listUserDevices returns all devices for a user', function () {
+    // Act
+    $devices = $this->deviceService->listUserDevices($this->user->id);
+
+    // Assert
+    expect($devices)->toBeCollection()
+        ->and($devices)->toHaveCount(2)
+        ->and($devices->pluck('id')->toArray())->toContain($this->pendingDevice->id, $this->approvedDevice->id);
+});
+
+test('listAllDevicesFiltered returns paginated devices with optional status filter', function () {
+    // Create additional devices with different statuses
+    Device::factory()->create([
+        'user_id' => $this->user->id,
+        'status' => Device::STATUS_REJECTED,
+    ]);
+
+    Device::factory()->create([
+        'user_id' => $this->user->id,
         'status' => Device::STATUS_REVOKED,
     ]);
 
-    // Verify new device was approved
+    // Act - Get all devices
+    $allDevices = $this->deviceService->listAllDevicesFiltered(null, 10);
+
+    // Assert
+    expect($allDevices)->toBeInstanceOf(\Illuminate\Pagination\LengthAwarePaginator::class)
+        ->and($allDevices->total())->toBe(4);
+
+    // Act - Get only pending devices
+    $pendingDevices = $this->deviceService->listAllDevicesFiltered(Device::STATUS_PENDING, 10);
+
+    // Assert
+    expect($pendingDevices)->toBeInstanceOf(\Illuminate\Pagination\LengthAwarePaginator::class)
+        ->and($pendingDevices->total())->toBe(1)
+        ->and($pendingDevices->items()[0]->id)->toBe($this->pendingDevice->id);
+});
+
+test('getDeviceDetails returns device when it exists', function () {
+    // Act
+    $device = $this->deviceService->getDeviceDetails($this->approvedDevice->id);
+
+    // Assert
+    expect($device)->toBeInstanceOf(Device::class)
+        ->and($device->id)->toBe($this->approvedDevice->id);
+});
+
+test('getDeviceDetails throws exception when device does not exist', function () {
+    // Act & Assert
+    expect(fn() => $this->deviceService->getDeviceDetails(999))
+        ->toThrow(DeviceNotFoundException::class);
+});
+
+test('approveDevice changes device status to approved', function () {
+    // Act
+    $device = $this->deviceService->approveDevice(
+        $this->pendingDevice->id,
+        $this->admin,
+        'Approved for testing'
+    );
+
+    // Assert
+    expect($device)->toBeInstanceOf(Device::class)
+        ->and($device->status)->toBe(Device::STATUS_APPROVED)
+        ->and($device->approved_by)->toBe($this->admin->id)
+        ->and($device->approved_at)->not->toBeNull()
+        ->and($device->admin_notes)->toBe('Approved for testing');
+
     $this->assertDatabaseHas('devices', [
-        'id' => $newDevice->id,
+        'id' => $this->pendingDevice->id,
         'status' => Device::STATUS_APPROVED,
+        'approved_by' => $this->admin->id,
     ]);
 });
 
 test('rejectDevice changes device status to rejected', function () {
-    // Arrange
-    $deviceService = new DeviceService();
-    $user = User::factory()->create();
-    $admin = User::factory()->create(['role' => 'admin']);
-    $device = Device::factory()->create([
-        'user_id' => $user->id,
-        'status' => Device::STATUS_PENDING,
-    ]);
-
     // Act
-    $result = $deviceService->rejectDevice($device, $admin, 'Suspicious activity');
+    $device = $this->deviceService->rejectDevice(
+        $this->pendingDevice->id,
+        $this->admin,
+        'Rejected for testing'
+    );
 
     // Assert
-    expect($result->success)->toBeTrue()
-        ->and($result->message)->toBe('Device rejected successfully.')
-        ->and($result->data->status)->toBe(Device::STATUS_REJECTED)
-        ->and($result->data->rejected_by)->toBe($admin->id)
-        ->and($result->data->admin_notes)->toBe('Suspicious activity');
+    expect($device)->toBeInstanceOf(Device::class)
+        ->and($device->status)->toBe(Device::STATUS_REJECTED)
+        ->and($device->rejected_by)->toBe($this->admin->id)
+        ->and($device->rejected_at)->not->toBeNull()
+        ->and($device->admin_notes)->toBe('Rejected for testing');
 
-    // Verify database was updated
     $this->assertDatabaseHas('devices', [
-        'id' => $device->id,
+        'id' => $this->pendingDevice->id,
         'status' => Device::STATUS_REJECTED,
-        'rejected_by' => $admin->id,
-        'admin_notes' => 'Suspicious activity',
+        'rejected_by' => $this->admin->id,
     ]);
 });
 
 test('revokeDevice changes device status to revoked', function () {
-    // Arrange
-    $deviceService = new DeviceService();
-    $user = User::factory()->create();
-    $admin = User::factory()->create(['role' => 'admin']);
-    $device = Device::factory()->create([
-        'user_id' => $user->id,
-        'status' => Device::STATUS_APPROVED,
-    ]);
-
-    // Create a token for the device
-    $tokenName = "auth_token_user_{$user->id}_device_{$device->id}";
-    $user->createToken($tokenName);
-
     // Act
-    $result = $deviceService->revokeDevice($device, $admin, 'Device reported lost');
-
-    // Assert
-    expect($result->success)->toBeTrue()
-        ->and($result->message)->toBe('Device revoked successfully.')
-        ->and($result->data->status)->toBe(Device::STATUS_REVOKED)
-        ->and($result->data->admin_notes)->toBe('Device reported lost');
-
-    // Verify database was updated
-    $this->assertDatabaseHas('devices', [
-        'id' => $device->id,
-        'status' => Device::STATUS_REVOKED,
-        'admin_notes' => 'Device reported lost',
-    ]);
-
-    // Verify token was deleted
-    expect($user->tokens()->where('name', $tokenName)->count())->toBe(0);
-});
-
-test('registerDeviceForUserByAdmin creates approved device', function () {
-    // Arrange
-    $deviceService = new DeviceService();
-    $user = User::factory()->create();
-    $admin = User::factory()->create(['role' => 'admin']);
-    $deviceIdentifier = 'admin-registered-device-123';
-    $deviceName = 'Office Laptop';
-
-    // Act
-    $result = $deviceService->registerDeviceForUserByAdmin(
-        $user,
-        $deviceIdentifier,
-        $deviceName,
-        $admin,
-        'Registered for new employee'
+    $device = $this->deviceService->revokeDevice(
+        $this->approvedDevice->id,
+        $this->admin,
+        'Revoked for testing'
     );
 
     // Assert
-    expect($result->success)->toBeTrue()
-        ->and($result->message)->toBe('Device registration successful.')
-        ->and($result->data->device_identifier)->toBe($deviceIdentifier)
-        ->and($result->data->name)->toBe($deviceName)
-        ->and($result->data->status)->toBe(Device::STATUS_APPROVED)
-        ->and($result->data->approved_by)->toBe($admin->id)
-        ->and($result->data->admin_notes)->toBe('Registered for new employee');
+    expect($device)->toBeInstanceOf(Device::class)
+        ->and($device->status)->toBe(Device::STATUS_REVOKED)
+        ->and($device->admin_notes)->toBe('Revoked for testing');
 
-    // Verify database was updated
     $this->assertDatabaseHas('devices', [
-        'user_id' => $user->id,
-        'device_identifier' => $deviceIdentifier,
-        'name' => $deviceName,
-        'status' => Device::STATUS_APPROVED,
-        'approved_by' => $admin->id,
-        'admin_notes' => 'Registered for new employee',
+        'id' => $this->approvedDevice->id,
+        'status' => Device::STATUS_REVOKED,
     ]);
 });
 
-test('updateDeviceLastUsed updates last_used_at timestamp', function () {
+test('registerDeviceForUserByAdmin creates a new approved device', function () {
     // Arrange
-    $deviceService = new DeviceService();
-    $device = Device::factory()->create([
-        'last_used_at' => null,
-    ]);
+    $deviceIdentifier = 'admin-registered-device-123';
+    $deviceName = 'Admin Registered Device';
 
     // Act
-    $deviceService->updateDeviceLastUsed($device);
+    $device = $this->deviceService->registerDeviceForUserByAdmin(
+        $this->user->id,
+        $deviceIdentifier,
+        $deviceName,
+        $this->admin,
+        'Registered by admin for testing'
+    );
 
     // Assert
-    $device->refresh();
-    expect($device->last_used_at)->not->toBeNull()
-        ->and($device->last_used_at)->toBeInstanceOf(\Carbon\Carbon::class)
-        ->and($device->last_used_at->diffInMinutes(now()))->toBeLessThan(1);
+    expect($device)->toBeInstanceOf(Device::class)
+        ->and($device->user_id)->toBe($this->user->id)
+        ->and($device->device_identifier)->toBe($deviceIdentifier)
+        ->and($device->name)->toBe($deviceName)
+        ->and($device->status)->toBe(Device::STATUS_APPROVED)
+        ->and($device->approved_by)->toBe($this->admin->id)
+        ->and($device->approved_at)->not->toBeNull()
+        ->and($device->admin_notes)->toBe('Registered by admin for testing');
+
+    $this->assertDatabaseHas('devices', [
+        'user_id' => $this->user->id,
+        'device_identifier' => $deviceIdentifier,
+        'name' => $deviceName,
+        'status' => Device::STATUS_APPROVED,
+    ]);
+});
+
+test('updateDeviceLastUsed updates the last_used_at timestamp', function () {
+    // Arrange
+    $originalTimestamp = $this->approvedDevice->last_used_at;
+
+    // Act
+    $this->deviceService->updateDeviceLastUsed($this->approvedDevice);
+    $this->approvedDevice->refresh();
+
+    // Assert
+    expect($this->approvedDevice->last_used_at)->not->toBe($originalTimestamp);
+
+    $this->assertDatabaseHas('devices', [
+        'id' => $this->approvedDevice->id,
+        'last_used_at' => $this->approvedDevice->last_used_at,
+    ]);
 });

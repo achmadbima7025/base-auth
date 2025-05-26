@@ -76,20 +76,21 @@ class DeviceService
 
     public function listAllDevicesFiltered(?string $status = null, ?int $perPage = 10): LengthAwarePaginator
     {
-        return Device::with(['user:id,name,email', 'approver:id,name'])
-            ->when(isset($status), function ($query) use ($status) {
-                $query->where('status', $status);
-            })
-            ->orderBy('created_at', 'desc')
-            ->paginate($perPage);
+        $query = Device::with(['user:id,name,email', 'approver:id,name']);
+
+        if (isset($status)) {
+            $query->where('status', $status);
+        }
+
+        return $query->paginate($perPage);
     }
 
     /**
      * @throws DeviceNotFoundException
      */
-    public function getDeviceDetails($deviceIde): Device
+    public function getDeviceDetails($deviceId): Device
     {
-        $device = Device::find($deviceIde);
+        $device = Device::find($deviceId);
 
         if (!$device) {
             throw new DeviceNotFoundException();
@@ -255,6 +256,9 @@ class DeviceService
 
             DB::commit();
             return $newDevice->fresh(['user']);
+        } catch (ModelNotFoundException $e) {
+            DB::rollBack();
+            throw $e;
         } catch (Exception $e) {
             DB::rollBack();
             Log::error($e->getMessage());

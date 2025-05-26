@@ -18,8 +18,8 @@ class UserResource extends JsonResource
             'id' => $this->id,
             'name' => $this->name,
             'email' => $this->email,
-            'role' => $this->role,
-            'device' => new DeviceResource($this->whenLoaded('devices')),
+            'roles' => $this->roles->first() ? $this->roles->first()->name : null,
+            'devices' => DeviceResource::collection($this->whenLoaded('devices')),
         ];
     }
 }

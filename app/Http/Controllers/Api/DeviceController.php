@@ -19,6 +19,7 @@ use Exception;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
@@ -34,17 +35,25 @@ class DeviceController extends Controller
      * Get device by identifier for a user
      * Retrieves a specific device for a user by its identifier
      */
-    public function getDeviceForUserByIdentifier(int|string $userId, string $identifier)
+    public function getDeviceForUserByIdentifier(int $userId, string $identifier)
     {
         if (!is_numeric($userId)) {
-            return $this->sendResponse(JsonResponseDto::error(message: 'User ID is invalid.'));
+            return $this->sendResponse(JsonResponseDto::error(message: 'User ID is invalid.', status: HttpStatusCode::NOT_FOUND));
         }
 
         try {
             $result = $this->service->getDeviceForUserByIdentifier($userId, $identifier);
-            $responseData = JsonResponseDto::success(new DeviceResource($result));
 
-            return $this->sendResponse($responseData);
+            if ($result === null) {
+                // When device is not found, return 404
+                $response = JsonResponseDto::error('Device not found.', status: HttpStatusCode::NOT_FOUND);
+                return $this->sendResponse($response);
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => new DeviceResource($result),
+            ]);
         } catch (ModelNotFoundException $e) {
             return $this->sendResponse(JsonResponseDto::error($e->getMessage(), HttpStatusCode::NOT_FOUND));
         } catch (Exception $e) {
@@ -56,7 +65,7 @@ class DeviceController extends Controller
      * List devices for a user
      * Lists all devices belonging to a specific user
      */
-    public function listUserDevices(int|string $userId)
+    public function listUserDevices(int $userId)
     {
         if (!is_numeric($userId)) {
             return $this->sendResponse(JsonResponseDto::error(message: 'User ID is invalid.'));
@@ -64,8 +73,11 @@ class DeviceController extends Controller
 
         try {
             $result = $this->service->listUserDevices($userId);
-            $responseData = JsonResponseDto::success(DeviceResource::collection($result));
-            return $this->sendResponse($responseData);
+
+            return response()->json([
+                'success' => true,
+                'data' => $result,
+            ]);
         } catch (ModelNotFoundException $e) {
             return $this->sendResponse(JsonResponseDto::error($e->getMessage(), HttpStatusCode::NOT_FOUND));
         } catch (Exception $e) {
@@ -79,19 +91,24 @@ class DeviceController extends Controller
      */
     public function listAllDevice(Request $request)
     {
-        $result = $this->service->listAllDevicesFiltered($request->get('status'), $request->get('perPage'));
-        $responseData = JsonResponseDto::success(
-            data: new DeviceCollection($result)
-        );
+        try {
+            $status = $request->get('status');
+            $result = $this->service->listAllDevicesFiltered($status, $request->get('perPage'));
 
-        return $this->sendResponse($responseData);
+            return response()->json([
+                'success' => true,
+                'data' => new DeviceCollection($result),
+            ]);
+        } catch (Exception $e) {
+            return $this->sendResponse(JsonResponseDto::error($e->getMessage(), HttpStatusCode::INTERNAL_SERVER_ERROR));
+        }
     }
 
     /**
      * Get device details
      * Retrieves details for a specific device
      */
-    public function getDetailDevice(int|string $deviceId)
+    public function getDetailDevice(int $deviceId)
     {
         if (!is_numeric($deviceId)) {
             return $this->sendResponse(JsonResponseDto::error(message: 'Device ID is invalid.'));
@@ -99,8 +116,10 @@ class DeviceController extends Controller
 
         try {
             $result = $this->service->getDeviceDetails($deviceId);
-            $responseData = JsonResponseDto::success(data: new DeviceResource($result));
-            return $this->sendResponse($responseData);
+            return response()->json([
+                'success' => true,
+                'data' => new DeviceResource($result),
+            ]);
         } catch (DeviceNotFoundException $e) {
             return $this->sendResponse(JsonResponseDto::error(message: $e->getMessage(), status: HttpStatusCode::NOT_FOUND));
         }
@@ -116,22 +135,31 @@ class DeviceController extends Controller
 
         try {
             $admin = Auth::user();
+            $deviceId = $request->route('deviceId');
 
             $result = $this->service->approveDevice(
-                deviceId: $validatedData['device_id'],
+                deviceId: $deviceId,
                 admin: $admin,
                 notes: $validatedData['notes']
             );
-            $responseData = JsonResponseDto::success(data: new DeviceResource($result), message: 'Device approved successfully.');;
 
-            return $this->sendResponse($responseData);
+            return response()->json([
+                'success' => true,
+                'message' => 'Device approved successfully.',
+                'data' => new DeviceResource($result),
+            ]);
         } catch (DeviceNotFoundException $e) {
+            Log::error('DeviceNotFoundException: ' . $e->getMessage());
             return $this->sendResponse(JsonResponseDto::error(message: $e->getMessage(), status: HttpStatusCode::NOT_FOUND));
         } catch (ModelNotFoundException $e) {
+            Log::error('ModelNotFoundException: ' . $e->getMessage());
             return $this->sendResponse(JsonResponseDto::error(message: 'Device not found.', status: HttpStatusCode::NOT_FOUND));
         } catch (InternalServerErrorException $e) {
+            Log::error('InternalServerErrorException: ' . $e->getMessage());
             return $this->sendResponse(JsonResponseDto::error(message: $e->getMessage(), status: HttpStatusCode::INTERNAL_SERVER_ERROR));
         } catch (Throwable $e) {
+            Log::error('Unexpected error: ' . $e->getMessage());
+            Log::error($e->getTraceAsString());
             return $this->sendResponse(JsonResponseDto::error(message: 'An unexpected error occurred.', status: HttpStatusCode::INTERNAL_SERVER_ERROR));
         }
     }
@@ -146,15 +174,19 @@ class DeviceController extends Controller
 
         try {
             $admin = Auth::user();
+            $deviceId = $request->route('deviceId');
 
             $result = $this->service->rejectDevice(
-                deviceId: $validatedData['device_id'],
+                deviceId: $deviceId,
                 admin: $admin,
                 notes: $validatedData['notes'],
             );
-            $responseData = JsonResponseDto::success(data: new DeviceResource($result));
 
-            return $this->sendResponse($responseData);
+            return response()->json([
+                'success' => true,
+                'message' => 'Device rejected successfully.',
+                'data' => new DeviceResource($result),
+            ]);
         } catch (ModelNotFoundException $e) {
             return $this->sendResponse(JsonResponseDto::error(message: 'Device not found.', status: HttpStatusCode::NOT_FOUND));
         } catch (InternalServerErrorException $e) {
@@ -174,16 +206,20 @@ class DeviceController extends Controller
 
         try {
             $admin = Auth::user();
-            $notes = $request->input('notes');
+            $deviceId = $request->route('deviceId');
+            $notes = $validatedData['notes'];
 
             $result = $this->service->revokeDevice(
-                deviceId: $validatedData['device_id'],
+                deviceId: $deviceId,
                 admin: $admin,
                 notes: $notes
             );
-            $responseData = JsonResponseDto::success(data: new DeviceResource($result));
 
-            return $this->sendResponse($responseData);
+            return response()->json([
+                'success' => true,
+                'message' => 'Device revoked successfully.',
+                'data' => new DeviceResource($result),
+            ]);
         } catch (ModelNotFoundException $e) {
             return $this->sendResponse(JsonResponseDto::error(message: 'Device not found.', status: HttpStatusCode::NOT_FOUND));
         } catch (InternalServerErrorException $e) {
@@ -210,35 +246,15 @@ class DeviceController extends Controller
                 notes: $validatedData['notes'],
             );
 
-            $responseData = JsonResponseDto::success(data: new DeviceResource($result), message: 'Device registered successfully.');;
-
-            return $this->sendResponse($responseData);
-        } catch (Exception $e) {
-            return $this->sendResponse(JsonResponseDto::error(message: 'An unexpected error occurred.', status: HttpStatusCode::INTERNAL_SERVER_ERROR));
-        }
-    }
-
-    /**
-     * Update device last used timestamp
-     * Updates the last used timestamp for a device
-     */
-    public function updateDeviceLastUsed(int|string $deviceId)
-    {
-        if (!is_numeric($deviceId)) {
-            return $this->sendResponse(JsonResponseDto::error(message: 'Device ID is invalid.'));
-        }
-
-        try {
-            $device = Device::findOrFail($deviceId);
-            $this->service->updateDeviceLastUsed($device);
-
-            return $this->sendResponse(JsonResponseDto::success(message: 'Device last used timestamp updated successfully.'));
-        } catch (ModelNotFoundException $e) {
-            return $this->sendResponse(JsonResponseDto::error(message: 'Device not found.', status: HttpStatusCode::NOT_FOUND));
-        } catch (InternalServerErrorException $e) {
-            return $this->sendResponse(JsonResponseDto::error(message: $e->getMessage(), status: HttpStatusCode::INTERNAL_SERVER_ERROR));
-        } catch (Exception $e) {
-            return $this->sendResponse(JsonResponseDto::error(message: 'An unexpected error occurred.', status: HttpStatusCode::INTERNAL_SERVER_ERROR));
+            return response()->json([
+                'success' => true,
+                'message' => 'Device registered successfully.',
+                'data' => new DeviceResource($result),
+            ], HttpStatusCode::CREATED);
+        } catch(ModelNotFoundException $e) {
+            return $this->sendResponse(JsonResponseDto::error(message: $e->getMessage()));
+        } catch (Throwable $e) {
+            return $this->sendResponse(JsonResponseDto::error(message: $e->getMessage()));
         }
     }
 }

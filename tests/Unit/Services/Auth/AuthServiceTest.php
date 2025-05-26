@@ -1,204 +1,171 @@
 <?php
 
-use App\Models\User;
+use App\Exceptions\UnauthorizedDeviceException;
 use App\Models\Device;
+use App\Models\User;
 use App\Services\Auth\AuthService;
+use Illuminate\Auth\AuthenticationException;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
-test('register creates a new user ywith correct data', function () {
+uses(RefreshDatabase::class);
+
+beforeEach(function () {
+    createRoles();
+    $this->authService = new AuthService();
+});
+
+test('register creates a new user with correct data', function () {
     // Arrange
-    $authService = new AuthService();
     $userData = [
         'name' => 'Test User',
         'email' => 'test@example.com',
+        'role' => 'user',
     ];
 
     // Act
-    $result = $authService->register($userData);
+    $user = $this->authService->register($userData);
 
     // Assert
-    expect($result->success)->toBeTrue()
-        ->and($result->message)->toBe('Registered successfully.')
-        ->and($result->data)->toBeInstanceOf(\App\Http\Resources\UserResource::class)
-        ->and($result->data->name)->toBe($userData['name'])
-        ->and($result->data->email)->toBe($userData['email'])
-        ->and($result->data->role)->toBe('user');
+    expect($user)->toBeInstanceOf(User::class)
+        ->and($user->name)->toBe($userData['name'])
+        ->and($user->email)->toBe($userData['email'])
+        ->and($user->hasRole($userData['role']))->toBeTrue();
 
-    // Verify the user was saved to the database
     $this->assertDatabaseHas('users', [
         'name' => $userData['name'],
         'email' => $userData['email'],
-        'role' => 'user',
     ]);
 });
 
-test('register handles exceptions gracefully', function () {
+test('login throws authentication exception for invalid credentials', function () {
     // Arrange
-    $userData = [
-        'name' => 'Test User',
-        'email' => 'test@example.com',
-    ];
-
-    $authService = Mockery::mock(AuthService::class);
-    $authService->expects()->register($userData)
-        ->once()
-        ->andReturn(\App\Http\Dto\JsonResponseDto::error('Internal server error.'));;
-
-    // Bind the mock to the container
-    $this->app->instance(AuthService::class, $authService);
-
-    $result = $authService->register($userData);
-
-    expect($result->success)->toBeFalse()
-        ->and($result->message)->toBe('Internal server error.');
-});
-
-test('login returns error for incorrect credentials', function () {
-    // Arrange
-    $authService = new AuthService();
-    $credentials = [
-        'email' => 'nonexistent@example.com',
-        'password' => 'password123',
-    ];
-
-    // Act
-    $result = $authService->login($credentials, 'device-123', 'Test Device', '127.0.0.1');
-
-    // Assert
-    expect($result->success)->toBeFalse()
-        ->and($result->message)->toBe('Email or password given is incorrect.');
-});
-
-test('login create new pending device if device does not exist', function () {
-    // Arrange
-    $authService = new AuthService();
     $user = User::factory()->create([
+        'email' => 'test@example.com',
         'password' => Hash::make('password123'),
     ]);
+
     $credentials = [
-        'email' => $user->email,
+        'email' => 'test@example.com',
+        'password' => 'wrong_password',
+    ];
+
+    // Act & Assert
+    expect(fn() => $this->authService->login($credentials, 'device-123', 'Test Device', '127.0.0.1'))
+        ->toThrow(AuthenticationException::class, 'Invalid credentials.');
+});
+
+test('login throws unauthorized device exception for new device', function () {
+    // Arrange
+    $user = User::factory()->create([
+        'email' => 'test@example.com',
+        'password' => Hash::make('password123'),
+    ]);
+
+    $credentials = [
+        'email' => 'test@example.com',
         'password' => 'password123',
     ];
 
-    $deviceIdentifier = 'new-device-' . Str::random(10);
-    $deviceName = 'Test Device';
-    $ipAddress = '127.0.0.1';
+    // Act & Assert
+    expect(fn() => $this->authService->login($credentials, 'new-device-123', 'New Test Device', '127.0.0.1'))
+        ->toThrow(UnauthorizedDeviceException::class, 'User has no registered devices, new device has been registered and is waiting for admin approval.');
 
-    // Act
-    $result = $authService->login($credentials, $deviceIdentifier, $deviceName, $ipAddress);
-
-    // Assert
-    expect($result->success)->toBeTrue()
-        ->and($result->message)->toBe('Device registration request received. Please wait for admin approval.');
-
-    // Verify device was created
     $this->assertDatabaseHas('devices', [
         'user_id' => $user->id,
-        'device_identifier' => $deviceIdentifier,
-        'name' => $deviceName,
+        'device_identifier' => 'new-device-123',
+        'name' => 'New Test Device',
         'status' => Device::STATUS_PENDING,
-        'last_login_ip' => $ipAddress,
     ]);
 });
 
-test('login returns error for non-approved device', function () {
+test('login throws unauthorized device exception for pending device', function () {
     // Arrange
-    $authService = new AuthService();
     $user = User::factory()->create([
+        'email' => 'test@example.com',
         'password' => Hash::make('password123'),
     ]);
 
     $device = Device::factory()->create([
         'user_id' => $user->id,
+        'device_identifier' => 'existing-device-123',
         'status' => Device::STATUS_PENDING,
     ]);
 
     $credentials = [
-        'email' => $user->email,
+        'email' => 'test@example.com',
         'password' => 'password123',
     ];
 
-    // Act
-    $result = $authService->login($credentials, $device->device_identifier, 'Test Device', '127.0.0.1');
-
-    // Assert
-    expect($result->success)->toBeFalse()
-        ->and($result->message)->toBe('Your device is still pending admin approval.');
+    // Act & Assert
+    expect(fn() => $this->authService->login($credentials, 'existing-device-123', 'Existing Test Device', '127.0.0.1'))
+        ->toThrow(UnauthorizedDeviceException::class, 'Your device is still pending admin approval.');
 });
 
 test('login returns token for approved device', function () {
     // Arrange
-    $authService = new AuthService();
     $user = User::factory()->create([
+        'email' => 'test@example.com',
         'password' => Hash::make('password123'),
     ]);
 
     $device = Device::factory()->create([
         'user_id' => $user->id,
+        'device_identifier' => 'approved-device-123',
         'status' => Device::STATUS_APPROVED,
     ]);
 
     $credentials = [
-        'email' => $user->email,
+        'email' => 'test@example.com',
         'password' => 'password123',
     ];
 
     // Act
-    $result = $authService->login($credentials, $device->device_identifier, 'Test Device', '127.0.0.1');
+    $result = $this->authService->login($credentials, 'approved-device-123', 'Approved Test Device', '127.0.0.1');
 
     // Assert
-    expect($result->success)->toBeTrue()
-        ->and($result->data)->toBeArray()
-        ->and($result->data['user'])->toBeInstanceOf(\App\Http\Resources\UserResource::class)
-        ->and($result->data['device'])->toBeInstanceOf(\App\Http\Resources\DeviceResource::class)
-        ->and($result->data['access_token'])->toBeString();
+    expect($result)->toBeArray()
+        ->and($result['user']->id)->toBe($user->id)
+        ->and($result['device']->id)->toBe($device->id)
+        ->and($result['access_token'])->toBeString();
 
-    // Verify device was updated
+    // Check that the device was updated
     $this->assertDatabaseHas('devices', [
         'id' => $device->id,
         'last_login_ip' => '127.0.0.1',
     ]);
 });
 
-test('logout deletes all user tokens', function () {
+test('logout deletes all tokens for user', function () {
     // Arrange
-    $authService = new AuthService();
     $user = User::factory()->create();
-
-    // Create some tokens for the user
-    $user->createToken('test-token-1');
-    $user->createToken('test-token-2');
+    $token = $user->createToken('test-token')->plainTextToken;
 
     // Act
-    $result = $authService->logout($user);
+    $this->authService->logout($user);
 
     // Assert
-    expect($result->success)->toBeTrue()
-        ->and($result->message)->toBe('Logged out successfully.')
-        ->and($user->tokens()->count())->toBe(0);
-
-    // Verify tokens were deleted
+    $this->assertDatabaseMissing('personal_access_tokens', [
+        'tokenable_id' => $user->id,
+    ]);
 });
 
-test('getUserDetails returns correct user data', function () {
+test('getUserDetails returns user with devices and roles', function () {
     // Arrange
-    $authService = new AuthService();
-    $user = User::factory()->create([
-        'name' => 'Test User',
-        'email' => 'test@example.com',
-        'role' => 'user',
+    $user = User::factory()->create();
+    $user->assignRole('user');
+    $device = Device::factory()->create([
+        'user_id' => $user->id,
     ]);
 
     // Act
-    $result = $authService->getUserDetails($user);
+    $result = $this->authService->getUserDetails($user);
 
     // Assert
-    expect($result->success)->toBeTrue()
-        ->and($result->data)->toBeInstanceOf(\App\Http\Resources\UserResource::class)
-        ->and($result->data['id'])->toBe($user->id)
-        ->and($result->data['name'])->toBe('Test User')
-        ->and($result->data['email'])->toBe('test@example.com')
-        ->and($result->data['role'])->toBe('user');
+    expect($result)->toBeInstanceOf(User::class)
+        ->and($result->devices)->toHaveCount(1)
+        ->and($result->devices->first()->id)->toBe($device->id)
+        ->and($result->roles)->toHaveCount(1)
+        ->and($result->roles->first()->name)->toBe('user');
 });
